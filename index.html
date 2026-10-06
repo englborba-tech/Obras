@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
@@ -39,7 +40,7 @@ label{display:block;font-size:.78rem;color:var(--mut);margin-bottom:3px;font-wei
 .tabs button{flex:1;white-space:nowrap}.tabs button.on{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
 .obra{display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer}
 .obra small{color:var(--mut)}
-.sv{border-left:5px solid var(--c);}
+.sv{border-left:8px solid var(--c);}
 .svh{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .svh .n{font-weight:700;color:var(--mut);width:24px}
 .svh input{flex:1;font-weight:600}
@@ -102,7 +103,25 @@ const brl=v=>v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const n1=v=>(Math.round(v*10)/10).toLocaleString("pt-BR");
 const num=s=>{const v=parseFloat(String(s).replace(/\s|R\$/g,"").replace(/\.(?=\d{3}(\D|$))/g,"").replace(",","."));return isNaN(v)?0:v;};
 const uid=()=>Math.random().toString(36).slice(2,9);
-const CORES=["#2563eb","#dc2626","#16a34a","#d97706","#7c3aed","#0891b2","#db2777","#65a30d","#ea580c","#4f46e5","#0d9488","#9333ea"];
+const CORES=["#2563eb","#dc2626","#16a34a","#d97706","#7c3aed","#0891b2","#db2777","#65a30d","#ea580c","#4f46e5","#0d9488","#9333ea","#a16207","#be123c","#0369a1","#4d7c0f"];
+const chaveCor=n=>String(n||"").replace(/\s*[–—-]\s*(\d+\s*[ªº°]?|[ivxlc]+)\b.*$/i,"").replace(/\s+\d+\s*[ªº°]?\s*$/,"").trim().toLowerCase();
+function coresObra(o){const m={},out={},g=o.cores||{},sv=o.coresSv||{};let k=0;(o.servicos||[]).forEach(s=>{const c=chaveCor(s.nome);if(!(c in m))m[c]=g[c]||CORES[k++%CORES.length];out[s.id]=sv[s.id]||m[c];});return out;}
+const PALETA=["#2563eb","#0369a1","#0891b2","#0d9488","#16a34a","#65a30d","#4d7c0f","#a16207","#d97706","#ea580c","#dc2626","#be123c","#db2777","#9333ea","#7c3aed","#4f46e5","#475569","#111827"];
+function escolherCor(o,s){const atual=coresObra(o)[s.id],grupo=chaveCor(s.nome),qtd=o.servicos.filter(x=>chaveCor(x.nome)===grupo).length;
+  let esc=atual;const prev=el("div",{style:"height:34px;border-radius:8px;margin-bottom:10px;background:"+atual});
+  const grade=el("div",{style:"display:grid;grid-template-columns:repeat(6,1fr);gap:8px"});
+  const marcar=c=>{esc=c;prev.style.background=c;[...grade.children].forEach(b=>b.style.outline=b.dataset.c===c?"3px solid var(--tx)":"none");};
+  PALETA.forEach(c=>{const b=el("button",{type:"button",style:`background:${c};border-color:${c};min-height:40px;padding:0`});b.dataset.c=c;b.onclick=()=>marcar(c);grade.append(b);});
+  const livre=el("input",{type:"color",value:atual,style:"min-height:44px;padding:2px"});livre.oninput=()=>marcar(livre.value);
+  const todos=el("input",{type:"checkbox"});todos.checked=true;todos.style.width="auto";
+  const corpo=el("div",null,prev,grade,el("div",{style:"margin-top:10px"},campo("Ou escolha qualquer cor",livre)),
+    qtd>1?el("label",{style:"display:flex;gap:8px;align-items:center;margin-top:10px;font-size:.9rem;color:var(--tx)"},todos,`Aplicar a todas as ${qtd} repetições de “${s.nome.replace(/\s*[–—-]\s*\d+.*$/,"")}”`):null);
+  setTimeout(()=>marcar(atual),0);
+  modal("Cor de “"+s.nome+"”",corpo,[["Aplicar","pri",()=>{
+      if(qtd>1&&todos.checked){o.cores=o.cores||{};o.cores[grupo]=esc;if(o.coresSv)o.servicos.forEach(x=>{if(chaveCor(x.nome)===grupo)delete o.coresSv[x.id];});}
+      else{o.coresSv=o.coresSv||{};o.coresSv[s.id]=esc;}
+      salvar(o);render();}],
+    ["Voltar à cor automática","",()=>{if(o.cores)delete o.cores[grupo];if(o.coresSv)o.servicos.forEach(x=>{if(chaveCor(x.nome)===grupo)delete o.coresSv[x.id];});salvar(o);render();}],["Cancelar"]]);}
 function ask(msg,btns){return new Promise(res=>{const bt=el("div",{class:"bt"});const m=el("div",{class:"modal"},el("div",{class:"box"},el("p",null,msg),bt));
   btns.forEach(([t,v,c])=>bt.append(el("button",{class:c||"",type:"button",onclick:()=>{m.remove();res(v);}},t)));
   m.onclick=e=>{if(e.target===m){m.remove();res(null);}};document.body.append(m);});}
@@ -197,7 +216,7 @@ function addDiaN(iso,n){const d=new Date(iso+"T12:00");d.setDate(d.getDate()+n);
 function addDia(iso){const d=new Date(iso+"T12:00");d.setDate(d.getDate()+1);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function calcular(o){
   ordenar(o);
-  const cal=Cal(o),N=Math.max(1,Math.floor(o.unidades||1)),res={},ordem=[],HOJE=cal.idx(hojeISO());
+  const cal=Cal(o),N=Math.max(1,Math.floor(o.unidades||1)),res={},ordem=[],HOJE=cal.idx(hojeISO()),CM=coresObra(o);
   o.servicos.forEach((s,si)=>{
     const tp=tipoDe(s),gl=tp!=="unit";
     const d=Math.max(0,+s.dur||0),k=gl?1:Math.max(1,Math.floor(+s.equipes||1)),lag=Math.max(0,+s.lag||0),pes=Math.max(0,+s.pessoas||0);
@@ -211,16 +230,17 @@ function calcular(o){
     const predReal=s.dep&&res[s.dep]?res[s.dep]:null;
     const pred=fixo?null:predReal;
     let aviso=s.dep&&!res[s.dep]?"A dependência está abaixo deste serviço na lista — foi ignorada.":null;
-    const predUn=pred&&!pred.gl;
+    const predUn=pred&&!pred.gl,SS=s.depTipo==="SS";
+    const pFimG=pred?(SS?pred.inicio:pred.fim):0,pFimU=i=>SS?pred.un[i].ini:pred.un[i].fim;
     const un=[];let espera=0,primeiraEspera=null,ideal=S0,folga=null,per=[];
     if(tp==="periodos"){
       per=(s.periodos||[]).filter(p=>p.ini&&p.fim&&p.fim>=p.ini).map(p=>{const a=cal.idx(p.ini),b=cal.idx(addDia(p.fim));return{ini:a,fim:Math.max(a+0.5,b),obs:p.obs||""};}).sort((x,y)=>x.ini-y.ini);
-      if(!per.length){const ini=Math.max(S0,pred?pred.fim+lag:S0);per=[{ini,fim:ini+d,auto:true}];aviso=(aviso?aviso+" ":"")+"Sem períodos cadastrados — usei a duração como estimativa.";}
-      else if(pred&&per[0].ini<pred.fim+lag-1e-6)aviso=(aviso?aviso+" ":"")+`Começa em ${fd(cal.data(per[0].ini))}, antes de ${pred.s.nome} terminar (${fd(cal.fim(pred.fim))}).`;
+      if(!per.length){const ini=Math.max(S0,pred?pFimG+lag:S0);per=[{ini,fim:ini+d,auto:true}];aviso=(aviso?aviso+" ":"")+"Sem períodos cadastrados — usei a duração como estimativa.";}
+      else if(pred&&per[0].ini<pFimG+lag-1e-6)aviso=(aviso?aviso+" ":"")+`Começa em ${fd(cal.data(per[0].ini))}, antes de ${pred.s.nome} terminar (${fd(cal.fim(pred.fim))}).`;
       const i0=Math.min(...per.map(p=>p.ini)),f0=Math.max(...per.map(p=>p.fim));
       for(let i=0;i<N;i++)un.push({ini:i0,fim:f0,eq:0,espera:0});
     }else if(gl){
-      let ini=Math.max(S0,libIdx,pred?pred.fim+lag:S0);if(pend&&!exS.g)ini=Math.max(ini,HOJE);
+      let ini=Math.max(S0,libIdx,pred?pFimG+lag:S0);if(pend&&!exS.g)ini=Math.max(ini,HOJE);
       per=exS.g?[{ini,fim:ini+d}]:aplicarPausas(ini,d,pausas);
       const i0=per[0].ini,f0=per[per.length-1].fim;
       for(let i=0;i<N;i++)un.push({ini:i0,fim:f0,eq:0,espera:0});
@@ -228,7 +248,7 @@ function calcular(o){
       const free=Array(k).fill(S0),usada=Array(k).fill(false);
       for(let i=0;i<N;i++){
         let t=0;for(let j=1;j<k;j++)if(free[j]<free[t])t=j;
-        const pronto=pred?pred.un[i].fim+lag:S0;
+        const pronto=pred?(pred.gl?pFimG:pFimU(i))+lag:S0;
         let ini=Math.max(free[t],pronto,libIdx);if(pend&&!exS[i])ini=Math.max(ini,HOJE);
         const w=usada[t]&&predUn&&pronto>free[t]+1e-9&&Math.abs(ini-pronto)<1e-9?ini-free[t]:0;
         if(w>1e-6){espera+=w;if(primeiraEspera===null)primeiraEspera=i;}
@@ -236,8 +256,8 @@ function calcular(o){
         if(!exS[i])for(const p of pausas){if(p.b<=ini||p.a>=fim)continue;if(p.a<=ini){par+=p.b-ini;ini=p.b;fim=ini+d;}else{par+=p.b-p.a;fim=p.b+(fim-p.a);}}
         un.push({ini,fim,eq:t,espera:w,par});free[t]=fim;usada[t]=true;
       }
-      if(pred)for(let i=0;i<N;i++)ideal=Math.max(ideal,pred.un[i].fim+lag-Math.floor(i/k)*d);
-      if(predUn)folga=Math.min(...un.map((u,i)=>u.ini-(pred.un[i].fim+lag)));
+      if(pred)for(let i=0;i<N;i++)ideal=Math.max(ideal,(pred.gl?pFimG:pFimU(i))+lag-Math.floor(i/k)*d);
+      if(predUn)folga=Math.min(...un.map((u,i)=>u.ini-(pFimU(i)+lag)));
     }
     if(fixo&&predReal&&tp!=="periodos"){
       if(tp==="unit"){const n=un.filter((u,i)=>u.ini<predReal.un[i].fim+lag-1e-6).length;
@@ -245,7 +265,7 @@ function calcular(o){
       else if(un[0].ini<predReal.fim+lag-1e-6)aviso=(aviso?aviso+" ":"")+`Início manual antes de ${predReal.s.nome} terminar (${fd(cal.fim(predReal.fim))}).`;}
     const inicio=Math.min(...un.map(u=>u.ini)),fim=Math.max(...un.map(u=>u.fim));
     const diasTrab=tp==="unit"?d*N:per.reduce((a,p)=>a+(p.fim-p.ini),0);
-    const r={s,cal,tp,gl,fixo,libSt,pausas,cor:CORES[si%CORES.length],un,per,inicio,fim,espera,primeiraEspera,ideal,folga,pred:pred||(fixo?predReal:null),predUn:pred&&!pred.gl,aviso,k,d,pes,diasTrab,
+    const r={s,cal,tp,gl,fixo,libSt,pausas,cor:CM[s.id],un,per,inicio,fim,espera,primeiraEspera,ideal,folga,pred:pred||(fixo?predReal:null),predUn:pred&&!pred.gl,aviso,k,d,pes,diasTrab,
       ritmo:d?k/d*(o.sabado?6:5):0,semDur:!d,custo:tp==="unit"?(+s.custo||0)*N:(+s.custo||0),hh:pes*k*(tp==="unit"?d*N/k:diasTrab)};
     res[s.id]=r;ordem.push(r);
   });
@@ -262,8 +282,10 @@ let db=null,obras=[],atual=null,aba="geral",salvarT=null,pend=null,gravando=0,ul
 function obraAtual(){return obras.find(o=>o.id===atual);}
 function salvar(o){pend=o;clearTimeout(salvarT);salvarT=setTimeout(()=>{const x=pend;pend=null;if(!x)return;
   const {id,...dados}=JSON.parse(JSON.stringify(x));gravando++;
-  fila=fila.then(()=>db.collection("obras").doc(id).set(dados)).catch(()=>toast("Erro ao salvar")).finally(()=>{gravando--;ultimaGrav=Date.now();});},400);}
-const ocupado=()=>pend||gravando>0||Date.now()-ultimaGrav<2000;
+  ultimaGrav=Date.now();
+  // envia na hora (sem esperar a anterior): offline, o Firebase guarda na fila local e sobe quando a internet voltar
+  db.collection("obras").doc(id).set(dados).catch(()=>toast("Erro ao salvar")).finally(()=>{gravando--;ultimaGrav=Date.now();});},400);}
+const ocupado=()=>pend||Date.now()-ultimaGrav<1500;
 
 // ---------- Telas ----------
 function render(){
@@ -538,6 +560,7 @@ function periodoPadrao(tipo){const h=new Date();
 let relCfg=null;
 function telaRel(a,o){
   o.relatorios=o.relatorios||[];
+  cardCampo(a,o);
   if(!relCfg||relCfg.obra!==o.id){const [de,ate]=periodoPadrao("semanal");relCfg={obra:o.id,tipo:"semanal",de,ate};}
   const f=el("div",{class:"card"},el("h2",null,"Relatório de acompanhamento"));
   const tp=el("select",null,el("option",{value:"semanal"},"Semanal"),el("option",{value:"mensal"},"Mensal"),el("option",{value:"pers"},"Personalizado"));tp.value=relCfg.tipo;
@@ -577,6 +600,98 @@ function telaRel(a,o){
     [...o.relatorios].reverse().forEach(x=>h.append(el("div",{class:"proj"},el("div",{class:"inf"},el("b",null,"Nº "+x.n+" · "+fdI(x.de)+" a "+fdI(x.ate)),el("small",null,"emitido em "+fdI(x.emitido)+(x.obs?" · "+x.obs.slice(0,80)+(x.obs.length>80?"…":""):""))),
       el("button",{class:"sm",onclick:()=>{relCfg={obra:o.id,tipo:"pers",de:x.de,ate:x.ate};o.relObs=x.obs||"";nr.value=x.n;salvar(o);render();toast("Período e observações carregados");}},"Reabrir"))));
     a.append(h);}
+}
+// ---------- Cronograma de campo (para afixar na obra) ----------
+const hexRgb=h=>{h=h.replace("#","");return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];};
+function atividadeDias(r){const m=new Map();const add=(a,b,p)=>{for(let x=Math.floor(a+1e-9);x<Math.ceil(b-1e-9);x++)m.set(x,(m.get(x)||0)+p);};
+  if(r.tp==="unit")r.un.forEach(u=>add(u.ini,u.fim,r.pes||0));else r.per.forEach(p=>add(p.ini,p.fim,r.pes||0));return m;}
+function pdfCampo(o,de,ate,fmt,umaFolha){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:"mm",format:fmt||"a4",orientation:"landscape"});
+  // desenha em escala "A4" e amplia para folhas maiores (texto e linhas crescem junto)
+  const K={a4:1,a3:1.25,a2:1.6,a1:2.1,a0:2.8}[fmt||"a4"]||1;
+  const P={setFillColor:(...x)=>doc.setFillColor(...x),setDrawColor:(...x)=>doc.setDrawColor(...x),setTextColor:(...x)=>doc.setTextColor(...x),setFont:(...x)=>doc.setFont(...x),
+    rect:(x,y,w,h,st)=>doc.rect(x*K,y*K,w*K,h*K,st),line:(a1,b1,c1,d1)=>doc.line(a1*K,b1*K,c1*K,d1*K),text:(t,x,y,op)=>doc.text(t,x*K,y*K,op),
+    setFontSize:v=>doc.setFontSize(v*K),setLineWidth:v=>doc.setLineWidth(v*K),getTextWidth:t=>doc.getTextWidth(t)/K,addPage:()=>doc.addPage(fmt||"a4","landscape"),getNumberOfPages:()=>doc.getNumberOfPages()};
+  const c=calcular(o),cal=c.cal,W=doc.internal.pageSize.getWidth()/K,H=doc.internal.pageSize.getHeight()/K,M=8;
+  const d0=cal.idx(de),d1=cal.idx(addDia(ate));if(d1<=d0)throw new Error("período");
+  const LW=62,HEAD=28,FOOT=20,MINC=6.2;let RH=6.4;
+  const porPag=umaFolha?(d1-d0):Math.max(5,Math.floor((W-2*M-LW)/MINC));
+  const hoje=cal.idx(hojeISO());
+  // linhas: etapas + subetapas ativas no período
+  const linhas=[];o.etapas.forEach(et=>{const rs=c.ordem.filter(r=>r.s.etapa===et.id).map(r=>({r,dias:atividadeDias(r)})).filter(x=>[...x.dias.keys()].some(k=>k>=d0&&k<d1));
+    if(rs.length){linhas.push({et});rs.forEach(x=>linhas.push(x));}});
+  if(!linhas.length)throw new Error("vazio");
+  if(umaFolha)RH=Math.max(3.4,Math.min(RH,(H-M-HEAD-FOOT)/(linhas.length+2)));
+  const rowsPorPag=Math.max(4,Math.floor((H-M-HEAD-FOOT-RH)/RH));
+  const txt=(t,x,y,op={})=>{P.setFont("helvetica",op.b?"bold":"normal");P.setFontSize(op.s||8);P.setTextColor(...(op.c||[17,24,39]));P.text(String(t),x,y,op.al?{align:op.al}:undefined);};
+  const leg=new Map();linhas.forEach(l=>{if(l.r){const k=chaveCor(l.r.s.nome);if(!leg.has(k))leg.set(k,{nome:l.r.s.nome.replace(/\s*[–—-]\s*\d+.*$/,""),cor:l.r.cor});}});
+  let primeira=true;
+  for(let a=d0;a<d1;a+=porPag){const b=Math.min(d1,a+porPag),nd=b-a,CWd=(W-2*M-LW)/nd,CW=Math.min(CWd,12),folhas=Math.ceil((d1-d0)/porPag),folha=Math.floor((a-d0)/porPag)+1;
+    const LC=[];linhas.forEach((l,i)=>{if(l.et){const filhos=[];for(let j=i+1;j<linhas.length&&!linhas[j].et;j++){const x=linhas[j];if([...x.dias.keys()].some(k=>k>=a&&k<b))filhos.push(x);}if(filhos.length){LC.push(l);LC.push(...filhos);}}});
+    for(let r0=0;r0<LC.length;r0+=rowsPorPag){
+      if(!primeira)P.addPage();primeira=false;
+      // cabeçalho
+      txt("CRONOGRAMA DE CAMPO",M,M+5,{b:1,s:14,c:[29,78,216]});
+      txt(o.nome||"",M,M+11,{b:1,s:10});
+      txt("Período: "+fd(cal.data(d0))+" a "+fd(cal.fim(d1))+(folhas>1?"   |   Folha "+folha+" de "+folhas+": "+fd(cal.data(a))+" a "+fd(cal.fim(b)):"")+"   |   Emitido em "+fdI(hojeISO()),M,M+16,{s:8,c:[107,114,128]});
+      const y0=M+HEAD,x0=M+LW;
+      // cabeçalho de datas
+      let ultM=-1;
+      for(let d=a;d<b;d++){const dt=cal.data(d),x=x0+(d-a)*CW;
+        if(dt.getMonth()!==ultM){ultM=dt.getMonth();txt(dt.toLocaleDateString("pt-BR",{month:"long"}).toUpperCase(),x+0.5,y0-6,{b:1,s:7,c:[29,78,216]});}
+        const fds=dt.getDay()===1;P.setFillColor(...(d===hoje?[254,240,138]:fds?[219,234,254]:[243,244,246]));P.rect(x,y0-4.5,CW+0.05,RH+4.5,"F");
+        if(CW>=4.2){txt(String(dt.getDate()).padStart(2,"0"),x+CW/2,y0-0.6,{b:1,s:CW>=5.5?7.5:6,al:"center"});
+          txt(["D","S","T","Q","Q","S","S"][dt.getDay()],x+CW/2,y0+RH-1.6,{s:6.5,c:[107,114,128],al:"center"});}
+        else if(fds)txt(String(dt.getDate()).padStart(2,"0"),x+0.3,y0-0.6,{b:1,s:5.5});}
+      txt("SERVIÇO",M+1,y0+RH-1.6,{b:1,s:7.5,c:[107,114,128]});
+      let y=y0+RH;
+      LC.slice(r0,r0+rowsPorPag).forEach(l=>{
+        if(l.et){P.setFillColor(229,231,235);P.rect(M,y,LW+nd*CW,RH,"F");txt(l.et.nome.toUpperCase(),M+1.5,y+RH*0.68,{b:1,s:7.5});y+=RH;return;}
+        const r=l.r,cor=hexRgb(r.cor);
+        P.setFillColor(...cor);P.rect(M+1,y+RH/2-1.6,3.2,3.2,"F");
+        let nm=r.s.nome;P.setFont("helvetica","normal");P.setFontSize(7.5);while(P.getTextWidth(nm)>LW-7&&nm.length>4)nm=nm.slice(0,-2);if(nm!==r.s.nome)nm=nm.slice(0,-1)+"…";
+        txt(nm,M+5.5,y+RH*0.68,{s:7.5});
+        for(let d=a;d<b;d++){const x=x0+(d-a)*CW,v=l.dias.get(d);
+          if(CW>=3){P.setDrawColor(229,231,235);P.setLineWidth(0.15);P.rect(x,y,CW,RH);}
+          if(v!==undefined){P.setFillColor(...cor);P.rect(x+(CW>=3?0.35:0),y+0.6,CW-(CW>=3?0.7:0)+(CW<3?0.05:0),RH-1.2,"F");
+            if(v>0&&CW>=5){const lum=cor[0]*0.3+cor[1]*0.59+cor[2]*0.11;txt(v,x+CW/2,y+RH*0.7,{b:1,s:6.8,c:lum>150?[17,24,39]:[255,255,255],al:"center"});}}}
+        P.setDrawColor(229,231,235);P.line(M,y+RH,x0,y+RH);y+=RH;});
+      // efetivo
+      if(r0+rowsPorPag>=LC.length){P.setFillColor(17,24,39);P.rect(M,y,LW,RH,"F");txt("EFETIVO TOTAL (pessoas)",M+1.5,y+RH*0.68,{b:1,s:7.5,c:[255,255,255]});
+        for(let d=a;d<b;d++){const x=x0+(d-a)*CW,v=c.efe[d]||0;P.setFillColor(243,244,246);P.rect(x,y,CW,RH,"F");if(v&&CW>=4.2)txt(v,x+CW/2,y+RH*0.7,{b:1,s:CW>=5.5?7:5.5,al:"center"});}y+=RH;}
+      // separadores de semana
+      for(let d=a;d<b;d++){if(cal.data(d).getDay()===1){const x=x0+(d-a)*CW;P.setDrawColor(55,65,81);P.setLineWidth(0.5);P.line(x,y0-4.5,x,y);}}
+      // legenda e rodapé
+      let lx=M,ly=H-FOOT+5;txt("Números nas células = pessoas previstas no serviço naquele dia.  Coluna amarela = hoje.  Linhas escuras = início de cada semana.",M,ly,{s:7,c:[107,114,128]});ly+=5;
+      leg.forEach(v=>{const w=P.getTextWidth(v.nome)+8;if(lx+w>W-M){lx=M;ly+=4.5;}P.setFillColor(...hexRgb(v.cor));P.rect(lx,ly-2.6,3,3,"F");txt(v.nome,lx+4,ly,{s:7});lx+=w+2;});
+      txt("Pág. "+P.getNumberOfPages(),W-M,H-4,{s:7,c:[107,114,128],al:"right"});
+    }}
+  return doc.output("blob");
+}
+async function salvarPdf(blob,nome){const dl=window.claude?await claude.use("downloads").catch(()=>null):null;
+  if(dl){try{await dl.save({filename:nome,data:blob});return true;}catch(e){if(e.code!=="declined")toast("Não foi possível salvar ("+e.code+")");return false;}}
+  const u=URL.createObjectURL(blob),l=document.createElement("a");l.href=u;l.download=nome;document.body.append(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),5000);return true;}
+let campoCfg=null;
+function cardCampo(a,o){
+  if(!campoCfg||campoCfg.obra!==o.id){const h=new Date();const dw=(h.getDay()+6)%7,ini=new Date(h);ini.setDate(h.getDate()-dw);const fim=new Date(ini);fim.setDate(ini.getDate()+27);campoCfg={obra:o.id,de:isoD(ini),ate:isoD(fim),fmt:"a4"};}
+  const c=el("div",{class:"card"},el("h2",null,"📌 Cronograma de campo (para afixar na obra)"),
+    el("p",{class:"hint"},"Folha em paisagem, dia a dia, com as cores de cada serviço e o número de pessoas por dia. Pensado para imprimir e deixar no canteiro."));
+  const de=el("input",{type:"date",value:campoCfg.de}),ate=el("input",{type:"date",value:campoCfg.ate});
+  de.onchange=()=>{campoCfg.de=de.value;};ate.onchange=()=>{campoCfg.ate=ate.value;};
+  const fm=el("select",null,el("option",{value:"a4"},"A4 paisagem (29,7 × 21 cm)"),el("option",{value:"a3"},"A3 paisagem (42 × 29,7 cm)"),el("option",{value:"a2"},"A2 paisagem (59,4 × 42 cm)"),el("option",{value:"a1"},"A1 paisagem (84,1 × 59,4 cm)"),el("option",{value:"a0"},"A0 paisagem (118,9 × 84,1 cm)"));fm.value=campoCfg.fmt;fm.onchange=()=>{campoCfg.fmt=fm.value;};
+  const uf=el("select",null,el("option",{value:"0"},"Várias folhas (dia a dia legível)"),el("option",{value:"1"},"Tudo em uma folha (visão geral)"));uf.value=campoCfg.uma?"1":"0";uf.onchange=()=>{campoCfg.uma=uf.value==="1";};
+  const atalho=(t,dias)=>el("button",{class:"sm",onclick:()=>{const h=new Date();const dw=(h.getDay()+6)%7,i=new Date(h);i.setDate(h.getDate()-dw);const f=new Date(i);f.setDate(i.getDate()+dias-1);campoCfg.de=isoD(i);campoCfg.ate=isoD(f);render();}},t);
+  c.append(el("div",{style:"display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"},atalho("2 semanas",14),atalho("4 semanas",28),atalho("8 semanas",56),
+    el("button",{class:"sm",onclick:()=>{const cc=calcular(o);campoCfg.de=cc.cal.iso(cc.cal.data(0));campoCfg.ate=cc.cal.iso(cc.cal.fim(cc.fim));render();}},"Obra inteira")));
+  c.append(el("div",{class:"g3"},campo("De",de),campo("Até",ate),campo("Papel",fm)));
+  c.append(el("div",{style:"margin-top:10px"},campo("Formato",uf)));
+  c.append(el("button",{class:"pri",style:"width:100%;margin-top:10px",onclick:async()=>{
+    if(!campoCfg.de||!campoCfg.ate||campoCfg.ate<campoCfg.de)return toast("Período inválido");
+    try{const blob=pdfCampo(o,campoCfg.de,campoCfg.ate,campoCfg.fmt,campoCfg.uma);
+      const nome=`Cronograma de campo - ${(o.nome||"obra").replace(/[\\/:*?"<>|]/g,"")} - ${fdI(campoCfg.de).replace(/\//g,"-")} a ${fdI(campoCfg.ate).replace(/\//g,"-")}.pdf`;
+      if(await salvarPdf(blob,nome))toast("Cronograma de campo gerado"+(campoCfg.uma?"":" — confira todas as folhas do PDF"));}
+    catch(e){console.error(e);toast(e.message==="vazio"?"Nenhum serviço no período":"Erro ao gerar o PDF");}}},"📌 Gerar cronograma de campo (PDF)"));
+  a.append(c);
 }
 function pdfRelatorio(o,R,num,obs){
   const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:"mm",format:"a4"});
@@ -698,12 +813,13 @@ function telaServ(a,o){
     a.append(head);
     if(fechada)return;
     subs.forEach(s=>{
-      const i=o.servicos.indexOf(s),tp=tipoDe(s),cor=CORES[i%CORES.length];
+      const i=o.servicos.indexOf(s),tp=tipoDe(s),cor=coresObra(o)[s.id];
       const card=el("div",{class:"card sv",style:"--c:"+cor+";margin-left:10px"});
+      card.onclick=e=>{if(e.target===card&&e.offsetX<=10)escolherCor(o,s);};
       const nome=el("input",{value:s.nome});nome.oninput=()=>{s.nome=nome.value;salvar(o);};
       const mv=d=>{const lista=o.servicos.filter(x=>x.etapa===et.id),p=lista.indexOf(s),q=p+d;if(q<0||q>=lista.length)return;
         const ia=o.servicos.indexOf(lista[p]),ib=o.servicos.indexOf(lista[q]);[o.servicos[ia],o.servicos[ib]]=[o.servicos[ib],o.servicos[ia]];salvar(o);render();};
-      card.append(el("div",{class:"svh"},nome,
+      card.append(el("div",{class:"svh"},el("button",{type:"button",title:"Escolher cor",style:`min-height:30px;width:30px;padding:0;border-radius:8px;background:${cor};border-color:${cor};flex:0 0 auto`,onclick:()=>escolherCor(o,s)}),nome,
         el("button",{title:"Subir",onclick:()=>mv(-1)},"↑"),el("button",{title:"Descer",onclick:()=>mv(1)},"↓"),
         el("button",{title:"Excluir",onclick:async()=>{if(!await ask(`Excluir "${s.nome}"?`,[["Excluir",true,"dan"],["Cancelar",false]]))return;
           const dep=s.dep;o.servicos.splice(o.servicos.indexOf(s),1);o.servicos.forEach(x=>{if(x.dep===s.id)x.dep=dep;});delete o.exec[s.id];salvar(o);render();}},"✕")));
@@ -724,6 +840,7 @@ function telaServ(a,o){
       im.onchange=()=>{if(ms.value==="fixo")s.inicioFixo=im.value;else s.inicioMin=im.value;salvar(o);};
       const cu=el("input",{inputmode:"decimal",value:s.custo?String(s.custo).replace(".",","):"",placeholder:"0,00"});cu.onchange=()=>{s.custo=num(cu.value);salvar(o);};
       card.append(el("div",{class:"g6",style:"margin-bottom:10px"},campo("Etapa",es),campo("Tipo",tps),campo("Depende de",dep),
+        s.dep?campo("Começa…",(()=>{const x=el("select",null,el("option",{value:"FS"},"Após o término dele"),el("option",{value:"SS"},"Após o início dele"));x.value=s.depTipo||"FS";x.onchange=()=>{s.depTipo=x.value;salvar(o);render();};return x;})()):null,
         campo(tp==="unit"?"Pessoas por equipe":"Pessoas",numInp("pessoas","1",0))));
       if(tp==="periodos"){
         const box=el("div",{style:"display:grid;gap:8px;margin-bottom:10px"});
@@ -741,7 +858,7 @@ function telaServ(a,o){
         card.append(el("div",{class:"g6"},
           campo(gl?"Duração total (dias úteis)":"Dias por "+U,numInp("dur","0.5",0)),
           gl?null:campo("Equipes",numInp("equipes","1",1)),
-          campo("Espera após (dias)",numInp("lag","1",0)),
+          campo(s.depTipo==="SS"?"Dias após o início dele":"Espera após (dias)",numInp("lag","1",0)),
           campo("Início",ms),campo(modo==="fixo"?"Data de início manual":modo==="min"?"Não iniciar antes de":"Data (automática)",im),
           campo(gl?"Custo total (R$)":"Custo por "+U+" (R$)",cu)));
       }
@@ -877,7 +994,7 @@ function grafico(c,o){
     if(r.primeiraEspera!==null){const u=r.un[r.primeiraEspera],cx=X(u.ini-u.espera);
       const d=mk(G,"circle",{cx,cy:y+RH/2,r:5,fill:"#dc2626",stroke:"#fff","stroke-width":"1.5"});tip(d,`Alcança ${r.pred.s.nome} no ${P} ${r.primeiraEspera+1}`);}
     if(r.pred&&pos[r.pred.s.id]!=null){const yp=pos[r.pred.s.id]+RH/2,yc=y+RH/2;
-      const xp=r.predUn&&r.tp==="unit"?X(r.pred.un[0].fim):X(r.pred.fim),xc=X(r.inicio);
+      const ss=r.s.depTipo==="SS",xp=ss?X(r.pred.inicio):(r.predUn&&r.tp==="unit"?X(r.pred.un[0].fim):X(r.pred.fim)),xc=X(r.inicio);
       mk(G,"path",{d:`M${xp} ${yp} L${xp+4} ${yp} L${xp+4} ${yc} L${xc} ${yc}`,fill:"none",stroke:mut,"stroke-width":"1","stroke-opacity":"0.7"});
       mk(G,"path",{d:`M${xc} ${yc} l-5 -3 v6 z`,fill:mut,"fill-opacity":"0.8"});}
   });
