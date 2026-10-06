@@ -189,7 +189,9 @@ function normalizar(o){
   const ids=new Set(o.etapas.map(e=>e.id));
   (o.servicos=o.servicos||[]).forEach(s=>{if(!ids.has(s.etapa))s.etapa=o.etapas[0].id;if(s.pessoas==null)s.pessoas=0;if(!s.periodos)s.periodos=[];if(!s.tipo)s.tipo="unit";});
   o.servicos.forEach(s=>{if(!s.trav)s.trav=[];if(s.lib&&s.lib.st==="travada"){s.trav.push({de:s.lib.data,ate:null,motivo:s.lib.motivo||""});s.lib=s.lib.ant||{st:"liberada",data:s.lib.data};}});
-  o.exec=o.exec||{};o.projetos=o.projetos||[];return o;}
+  o.exec=o.exec||{};o.projetos=o.projetos||[];o.gastos=o.gastos||[];
+  o.gastos.forEach(g=>{if(!Array.isArray(g.pags))g.pags=(+g.pago>0)?[{id:uid(),data:g.venc||"",valor:+g.pago,obs:""}]:[];g.pago=Math.round(g.pags.reduce((a,p)=>a+(+p.valor||0),0)*100)/100;});
+  return o;}
 function ordenar(o){normalizar(o);const ord={};o.etapas.forEach((e,i)=>ord[e.id]=i);
   o.servicos=o.servicos.map((s,i)=>[s,i]).sort((x,y)=>ord[x[0].etapa]-ord[y[0].etapa]||x[1]-y[1]).map(x=>x[0]);}
 const nomeEtapa=(o,id)=>(o.etapas.find(e=>e.id===id)||{}).nome||"—";
@@ -325,10 +327,10 @@ async function novaObra(){
 function telaObra(a,o){
   a.append(el("div",{class:"top"},el("button",{onclick:()=>{atual=null;render();}},"‹"),el("h1",null,o.nome)));
   const tabs=el("div",{class:"tabs"});
-  [["geral","📊","Visão geral"],["dados","📋","Dados"],["proj","📐","Projetos"],["serv","🧱","Serviços"],["crono","📅","Cronograma"],["exec","✅","Execução"],["rel","📄","Relatórios"]]
+  [["geral","📊","Visão geral"],["dados","📋","Dados"],["proj","📐","Projetos"],["serv","🧱","Serviços"],["crono","📅","Cronograma"],["exec","✅","Execução"],["custos","💰","Custos"],["rel","📄","Relatórios"]]
     .forEach(([k,ic,t])=>tabs.append(el("button",{class:aba===k?"on":"",onclick:()=>{aba=k;render();window.scrollTo(0,0);}},el("i",null,ic),t)));
   a.append(tabs);
-  ({geral:telaGeral,dados:telaDados,proj:telaProj,serv:telaServ,crono:telaCrono,exec:telaExec,rel:telaRel}[aba]||telaGeral)(a,o);
+  ({geral:telaGeral,dados:telaDados,proj:telaProj,serv:telaServ,crono:telaCrono,exec:telaExec,rel:telaRel,custos:telaCustos}[aba]||telaGeral)(a,o);
 }
 
 function campo(lbl,inp){return el("div",null,el("label",null,lbl),inp);}
@@ -725,7 +727,13 @@ function pdfRelatorio(o,R,num,obs){
   novaPag(10);doc.setFillColor(229,231,235);doc.rect(M,y,CW,4,"F");doc.setFillColor(21,128,61);doc.rect(M,y,CW*Math.min(1,R.fis),4,"F");
   doc.setDrawColor(...esc);doc.setLineWidth(0.5);doc.line(M+CW*Math.min(1,R.plan),y-1.5,M+CW*Math.min(1,R.plan),y+5.5);
   y+=8;txt("Barra verde: executado acumulado  |  traço: previsto até o fim do período",M,y,{s:7.5,c:cinza});y+=2;
-  if(R.custo>0){doc.autoTable({startY:y+2,head:[["Físico-financeiro","Valor"]],body:[["Custo total planejado",brl(R.custo)],["Previsto até "+fdI(R.ate),brl(R.custoPrev)],["Executado até "+fdI(R.ate),brl(R.custoExec)]],
+  if((o.gastos||[]).length){const RC=resumoCustos(o,R.c);
+    doc.autoTable({startY:y+2,head:[["Custos por etapa","Orçado","Gasto","Pago","A pagar"]],
+      body:[...RC.porEt.filter(x=>x.orc||x.valor).map(x=>[x.et.nome,x.orc?brl(x.orc):"-",x.valor?brl(x.valor):"-",x.pago?brl(x.pago):"-",x.valor-x.pago>0?brl(x.valor-x.pago):"-"]),
+        ["TOTAL",brl(RC.orc),brl(RC.valor),brl(RC.pago),brl(RC.valor-RC.pago)]],
+      margin:{left:M,right:M},styles:{fontSize:8.5},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}},
+      didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY;}
+  if(R.custo>0&&!(o.gastos||[]).length){doc.autoTable({startY:y+2,head:[["Físico-financeiro","Valor"]],body:[["Custo total planejado",brl(R.custo)],["Previsto até "+fdI(R.ate),brl(R.custoPrev)],["Executado até "+fdI(R.ate),brl(R.custoExec)]],
     margin:{left:M,right:M},styles:{fontSize:9},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:{1:{halign:"right"}}});y=doc.lastAutoTable.finalY;}
   // tabelas
   const tab=(tit,lst,vazio,cols,row)=>{titulo(tit);if(!lst.length){txt(vazio,M,y+3,{s:9.5,c:cinza});y+=7;return;}
@@ -762,6 +770,83 @@ function pdfRelatorio(o,R,num,obs){
   return doc.output("blob");
 }
 
+// ---------- Custos reais ----------
+const CATG=["Material","Mão de obra","Equipamentos / caçamba","Serviços de terceiros","Taxas e documentos","Outros"];
+const totGastos=l=>l.reduce((a,g)=>({valor:a.valor+(+g.valor||0),pago:a.pago+Math.min(+g.valor||0,+g.pago||0)}),{valor:0,pago:0});
+const r2=v=>Math.round(v*100)/100;
+function resumoCustos(o,c){
+  const porEt=o.etapas.map(et=>{const rs=c.ordem.filter(r=>r.s.etapa===et.id),orc=rs.reduce((a,r)=>a+r.custo,0),gs=(o.gastos||[]).filter(g=>g.et===et.id),t=totGastos(gs);
+    return{et,orc,...t,gs,rs};});
+  const semEt=(o.gastos||[]).filter(g=>!o.etapas.some(e=>e.id===g.et));
+  return{porEt,semEt,orc:c.custo,...totGastos(o.gastos||[])};}
+function syncPago(g){g.pago=r2((g.pags||[]).reduce((a,p)=>a+(+p.valor||0),0));}
+function registrarPag(o,g){const falta=r2(g.valor-g.pago);const va=el("input",{inputmode:"decimal",value:String(falta).replace(".",",")}),dt=el("input",{type:"date",value:hojeISO()}),ob=el("input",{placeholder:"Ex.: adiantamento, Pix, 1ª parcela…"});
+  const hist=(g.pags||[]).length?el("div",{class:"hint",style:"margin:0"},"Já pago: "+g.pags.map(p=>brl(p.valor)+(p.data?" em "+fdI(p.data):"")).join(" · ")):null;
+  modal("Registrar pagamento — "+g.desc,el("div",{style:"display:grid;gap:10px"},el("p",{class:"hint",style:"margin:0"},"Total "+brl(g.valor)+" · falta "+brl(falta)+". Pode ser só uma parte (adiantamento ou parcela)."),hist,
+      el("div",{class:"g2"},campo("Valor pago agora (R$)",va),campo("Data do pagamento",dt)),campo("Observação",ob)),
+    [["Registrar","pri",()=>{const v=r2(num(va.value));if(!(v>0)){toast("Informe o valor");return false;}if(v>falta+0.004){toast("Maior que o valor que falta ("+brl(falta)+")");return false;}
+      g.pags=g.pags||[];g.pags.push({id:uid(),data:dt.value||hojeISO(),valor:v,obs:ob.value.trim()});syncPago(g);salvar(o);render();toast(g.pago>=g.valor?"Quitado":"Pagamento registrado · falta "+brl(r2(g.valor-g.pago)));}],["Cancelar"]]);}
+function formGasto(o,g,onOk){const novo=!g;g=g?JSON.parse(JSON.stringify(g)):{id:uid(),et:o.etapas[0]?.id||"",sid:"",cat:"Material",desc:"",valor:0,pago:0,venc:hojeISO(),obs:""};
+  const es=el("select");o.etapas.forEach(e=>es.append(el("option",{value:e.id},e.nome)));es.value=g.et||"";
+  const ss=el("select");const fillS=()=>{ss.innerHTML="";ss.append(el("option",{value:""},"— etapa inteira —"));o.servicos.filter(x=>x.etapa===es.value).forEach(x=>ss.append(el("option",{value:x.id},x.nome)));ss.value=o.servicos.some(x=>x.id===g.sid&&x.etapa===es.value)?g.sid:"";};fillS();es.onchange=fillS;
+  const cs=el("select");CATG.forEach(x=>cs.append(el("option",null,x)));cs.value=g.cat||"Material";
+  const de=el("input",{value:g.desc||"",placeholder:"Ex.: Nota fiscal cimento e cal"});
+  const va=el("input",{inputmode:"decimal",value:g.valor?String(g.valor).replace(".",","):"",placeholder:"0,00"});
+  const st=el("select",null,el("option",{value:"pago"},"Pago"),el("option",{value:"apagar"},"A pagar"),el("option",{value:"parcial"},"Pago em parte (adiantamento)"));
+  st.value=!novo&&g.pago>=g.valor&&g.valor>0?"pago":(g.pago>0?"parcial":(novo?"pago":"apagar"));
+  const pg=el("input",{inputmode:"decimal",value:g.pago?String(g.pago).replace(".",","):""});const cpg=campo("Valor já pago (R$)",pg);cpg.style.display=st.value==="parcial"?"":"none";
+  const temPags=!novo&&(g.pags||[]).length>0;
+  st.onchange=()=>{cpg.style.display=st.value==="parcial"?"":"none";};
+  const vc=el("input",{type:"date",value:g.venc||""}),ob=el("input",{value:g.obs||"",placeholder:"Opcional"});
+  const corpo=el("div",{style:"display:grid;gap:10px;max-height:70vh;overflow:auto"},campo("Etapa",es),campo("Subetapa",ss),el("div",{class:"g2"},campo("Categoria",cs),campo("Valor (R$)",va)),
+    campo("Descrição",de),temPags?el("div",{class:"g2"},campo("Data / vencimento",vc)):el("div",{class:"g2"},campo("Situação",st),campo("Data / vencimento",vc)),temPags?null:cpg,
+    temPags?el("div",null,el("label",null,"Pagamentos registrados"),...g.pags.map((p,i)=>el("div",{style:"display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px solid var(--bd)"},
+      el("span",{style:"flex:1"},brl(p.valor)+(p.data?" · "+fdI(p.data):"")+(p.obs?" · "+p.obs:"")),
+      el("button",{class:"sm",type:"button",onclick:e=>{g.pags.splice(i,1);e.target.closest("div").remove();}},"✕")))):null,campo("Observação",ob));
+  modal(novo?"Lançar gasto":"Editar gasto",corpo,[["Salvar","pri",()=>{const v=num(va.value);if(!(v>0)){toast("Informe o valor");return false;}
+      g.et=es.value;g.sid=ss.value;g.cat=cs.value;g.desc=de.value.trim()||cs.value;g.valor=r2(v);g.venc=vc.value;g.obs=ob.value.trim();
+      if(!temPags){const pv=st.value==="pago"?g.valor:st.value==="apagar"?0:r2(Math.min(g.valor,num(pg.value)));g.pags=pv>0?[{id:uid(),data:st.value==="pago"?(g.venc||hojeISO()):hojeISO(),valor:pv,obs:""}]:[];}
+      syncPago(g);
+      o.gastos=o.gastos||[];const i=o.gastos.findIndex(x=>x.id===g.id);if(i>=0)o.gastos[i]=g;else o.gastos.push(g);salvar(o);render();onOk&&onOk();toast("Gasto salvo");}],["Cancelar"]]);}
+function telaCustos(a,o){
+  const c=calcular(o),R=resumoCustos(o,c);
+  a.append(el("div",{class:"card"},el("h2",null,"Resumo financeiro"),el("div",{class:"kpi"},
+    ...[["Orçado (planejamento)",brl(R.orc)],["Gasto lançado",brl(R.valor)],["Pago",brl(R.pago),"var(--ok)"],["A pagar",brl(R.valor-R.pago),R.valor-R.pago>0?"var(--wa)":""]]
+      .map(([t,v,cor])=>el("div",null,el("small",null,t),el("b",{style:cor?"color:"+cor:""},v)))),
+    el("button",{class:"pri",style:"width:100%;margin-top:12px",onclick:()=>formGasto(o)},"+ Lançar gasto")));
+  // a pagar por mês
+  const ab=(o.gastos||[]).filter(g=>(+g.valor||0)-(+g.pago||0)>0.004);
+  if(ab.length){const pm={};ab.forEach(g=>{const k=g.venc?g.venc.slice(0,7):"sem data";(pm[k]=pm[k]||[]).push(g);});
+    const cd=el("div",{class:"card"},el("h2",null,"A pagar por mês"));
+    Object.keys(pm).sort((x,y)=>x==="sem data"?1:y==="sem data"?-1:x.localeCompare(y)).forEach(k=>{const l=pm[k],t=l.reduce((s1,g)=>s1+(g.valor-g.pago),0);
+      const nm=k==="sem data"?"Sem data definida":new Date(k+"-15T12:00").toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+      cd.append(el("div",{class:"proj"},el("div",{class:"inf"},el("b",{style:"text-transform:capitalize"},nm),el("small",null,l.map(g=>g.desc+" ("+brl(g.valor-g.pago)+")").join(" · "))),el("b",{style:"color:var(--wa)"},brl(t))));});
+    a.append(cd);}
+  // orçado x gasto por etapa
+  const t=el("table");t.append(el("thead",null,el("tr",null,...["Etapa","Orçado","Gasto","Pago","A pagar","Gasto / orçado"].map((h,i)=>el("th",{class:i?"r":""},h)))));
+  const tb=el("tbody");
+  R.porEt.forEach(x=>{if(!x.orc&&!x.valor)return;const pct=x.orc?x.valor/x.orc*100:null;
+    tb.append(el("tr",null,el("td",null,x.et.nome),el("td",{class:"r"},x.orc?brl(x.orc):"—"),el("td",{class:"r"},x.valor?brl(x.valor):"—"),el("td",{class:"r"},x.pago?brl(x.pago):"—"),
+      el("td",{class:"r",style:x.valor-x.pago>0?"color:var(--wa);font-weight:600":""},x.valor-x.pago>0?brl(x.valor-x.pago):"—"),
+      el("td",{class:"r",style:pct!=null&&pct>100?"color:var(--no);font-weight:600":""},pct==null?"—":n1(pct)+"%")));});
+  tb.append(el("tr",{style:"font-weight:700"},el("td",null,"Total"),el("td",{class:"r"},brl(R.orc)),el("td",{class:"r"},brl(R.valor)),el("td",{class:"r"},brl(R.pago)),el("td",{class:"r"},brl(R.valor-R.pago)),el("td",{class:"r"},R.orc?n1(R.valor/R.orc*100)+"%":"—")));
+  t.append(tb);a.append(el("div",{class:"card"},el("h2",null,"Orçado × gasto por etapa"),el("p",{class:"hint"},"O orçado vem do custo informado em cada subetapa (aba Serviços). O gasto vem dos lançamentos abaixo."),el("div",{class:"tw"},t)));
+  // lista de gastos
+  const lst=el("div",{class:"card"},el("h2",null,"Gastos lançados ("+(o.gastos||[]).length+")"));
+  if(!(o.gastos||[]).length)lst.append(el("p",{class:"hint"},"Nenhum gasto lançado ainda."));
+  [...R.porEt.map(x=>({nome:x.et.nome,gs:x.gs})),{nome:"Sem etapa",gs:R.semEt}].forEach(gr=>{if(!gr.gs.length)return;
+    lst.append(el("div",{class:"sec"},gr.nome));
+    [...gr.gs].sort((x,y)=>(x.venc||"").localeCompare(y.venc||"")).forEach(g=>{const ap=r2((+g.valor||0)-(+g.pago||0)),sv=o.servicos.find(x=>x.id===g.sid);
+      const tag=ap<=0?el("span",{class:"tag2 ok"},"Pago"):g.pago>0?el("span",{class:"tag2",style:"color:var(--wa)"},"Falta "+brl(ap)):el("span",{class:"tag2",style:"background:color-mix(in srgb,var(--wa) 18%,transparent);color:var(--wa)"},"A pagar");
+      lst.append(el("div",{class:"proj"},el("div",{class:"inf"},el("b",null,g.desc+" — "+brl(g.valor)),
+        el("small",null,[g.cat,sv?sv.nome:null,g.venc?(ap>0?"vence ":"")+fdI(g.venc):null,g.obs||null].filter(Boolean).join(" · ")),
+        (g.pags||[]).length&&ap>0?el("small",{style:"display:block;color:var(--ok)"},"Pago: "+g.pags.map(p=>brl(p.valor)+(p.data?" em "+fdI(p.data):"")).join(" + ")):null),tag,
+        ap>0?el("button",{class:"sm pri",title:"Registrar pagamento (total ou parcial)",onclick:()=>registrarPag(o,g)},"$ Pagar"):null,
+        el("button",{class:"sm",title:"Editar",onclick:()=>formGasto(o,g)},"✎"),
+        el("button",{class:"sm",title:"Excluir",onclick:async()=>{if(await ask(`Excluir "${g.desc}" (${brl(g.valor)})?`,[["Excluir",true,"dan"],["Cancelar",false]])){o.gastos=o.gastos.filter(x=>x.id!==g.id);salvar(o);render();}}},"✕")));});});
+  a.append(lst);
+}
+
 // ---------- Visão geral ----------
 function telaGeral(a,o){
   ordenar(o);
@@ -772,6 +857,7 @@ function telaGeral(a,o){
     ...(o.fimContrato?[["Término contratual",o.fimContrato.split("-").reverse().join("/")]]:[]),
     ["Executado",n1(and.fis*100)+"%"],["Previsto até hoje",n1(and.plan*100)+"%"],
     ...(o.valorContrato?[["Valor do contrato",brl(o.valorContrato)]]:[]),...(c.custo?[["Custo planejado",brl(c.custo)]]:[]),
+    ...((o.gastos||[]).length?(()=>{const t=totGastos(o.gastos);return[["Gasto até agora",brl(t.valor)],["Pago",brl(t.pago)],["A pagar",brl(t.valor-t.pago)]];})():[]),
     ["Projetos cadastrados",String((o.projetos||[]).length)]];
   a.append(el("div",{class:"card"},el("div",{class:"kpi"},...itens.map(([t,v])=>el("div",null,el("small",null,t),el("b",null,v))))));
   if(fimC!==null&&c.fim>fimC+0.01)a.append(el("div",{class:"alert w"},el("b",null,"Atenção: "),`o cronograma termina ${Math.ceil(c.fim-fimC)} dias úteis depois do prazo contratual.`));

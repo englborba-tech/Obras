@@ -1,0 +1,522 @@
+{
+ "app": "planejamento-obras",
+ "versao": 1,
+ "obra": {
+  "nome": "Casas Geminadas Joelma",
+  "codigo": "",
+  "status": "Paralisada",
+  "tipoObra": "Casas geminadas",
+  "padrao": "Normal",
+  "cliente": "Joelma e Jairdes",
+  "contato": "",
+  "rt": "Lucas Santos Borba de Andrade",
+  "art": "",
+  "mestre": "",
+  "cno": "",
+  "endereco": "Rua Pusco, 696 — Bethânia",
+  "cidade": "Ipatinga/MG",
+  "mapa": "",
+  "unidades": 4,
+  "prefixo": "Casa",
+  "area": "",
+  "areaTerreno": "",
+  "pavimentos": "",
+  "blocos": "",
+  "inicio": "2026-08-14",
+  "fimContrato": "",
+  "valorContrato": 0,
+  "sabado": false,
+  "feriados": [
+   "2026-09-07",
+   "2026-10-12",
+   "2026-11-02",
+   "2026-11-20",
+   "2026-12-25",
+   "2027-01-01",
+   "2027-02-08",
+   "2027-02-09"
+  ],
+  "obs": "Conclusão de obra de 4 casas geminadas (fundação, estrutura, alvenaria, telhado e hidráulica já executados). Teto de desembolso mensal combinado: R$ 35.000,00. Paredes existentes fora de prumo aumentaram tempo e consumo nas mestras e no gesso. Orçamento base: planilha Orçamento_Joelma (bancadas, granitos, elétrica e limpeza final ainda sem valor).",
+  "etapas": [
+   {
+    "id": "fy2jnbb",
+    "nome": "Preparação e mestras"
+   },
+   {
+    "id": "cbf73pu",
+    "nome": "Gesso interno e forro"
+   },
+   {
+    "id": "7qecr7l",
+    "nome": "Contrapiso e impermeabilização"
+   },
+   {
+    "id": "qmsuh8r",
+    "nome": "Revestimentos e granitos"
+   },
+   {
+    "id": "bncsr4q",
+    "nome": "Esquadrias"
+   },
+   {
+    "id": "rvylcmr",
+    "nome": "Instalações elétricas"
+   },
+   {
+    "id": "33ngi87",
+    "nome": "Pintura interna"
+   },
+   {
+    "id": "k7h2g03",
+    "nome": "Bancadas, louças e metais"
+   },
+   {
+    "id": "5uagq4a",
+    "nome": "Acabamentos finais"
+   },
+   {
+    "id": "f3n50ny",
+    "nome": "Portões e interfonia"
+   },
+   {
+    "id": "hfh21gz",
+    "nome": "Finalização e entrega"
+   }
+  ],
+  "servicos": [
+   {
+    "id": "takog9v",
+    "etapa": "fy2jnbb",
+    "tipo": "global",
+    "nome": "Limpeza das casas",
+    "dur": 5,
+    "equipes": 1,
+    "pessoas": 3,
+    "dep": "",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 800,
+    "periodos": [],
+    "trav": [],
+    "modoInicio": "fixo",
+    "inicioFixo": "2026-08-14",
+    "lib": {
+     "st": "liberada",
+     "data": "2026-08-14"
+    }
+   },
+   {
+    "id": "qkpauvs",
+    "etapa": "fy2jnbb",
+    "tipo": "global",
+    "nome": "Mestras das paredes",
+    "dur": 7,
+    "equipes": 1,
+    "pessoas": 3,
+    "dep": "takog9v",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 5253.51,
+    "periodos": [],
+    "trav": [],
+    "lib": {
+     "st": "liberada",
+     "data": "2026-08-21"
+    }
+   },
+   {
+    "id": "lt0jo7h",
+    "etapa": "cbf73pu",
+    "tipo": "global",
+    "nome": "Gesso liso nas paredes",
+    "dur": 12,
+    "equipes": 1,
+    "pessoas": 6,
+    "dep": "qkpauvs",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 25800,
+    "periodos": [],
+    "trav": [],
+    "modoInicio": "fixo",
+    "inicioFixo": "2026-09-04",
+    "lib": {
+     "st": "liberada",
+     "data": "2026-09-04"
+    }
+   },
+   {
+    "id": "hrk34oo",
+    "etapa": "cbf73pu",
+    "tipo": "global",
+    "nome": "Forro de gesso",
+    "dur": 12,
+    "equipes": 1,
+    "pessoas": 6,
+    "dep": "qkpauvs",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 34800,
+    "periodos": [],
+    "trav": [],
+    "modoInicio": "fixo",
+    "inicioFixo": "2026-09-04",
+    "lib": {
+     "st": "liberada",
+     "data": "2026-09-04"
+    }
+   },
+   {
+    "id": "vdd22ey",
+    "etapa": "7qecr7l",
+    "tipo": "unit",
+    "nome": "Contrapiso",
+    "dur": 5,
+    "equipes": 1,
+    "pessoas": 3,
+    "dep": "hrk34oo",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 3000,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "3vyqjbk",
+    "etapa": "7qecr7l",
+    "tipo": "unit",
+    "nome": "Impermeabilização das áreas molhadas",
+    "dur": 1,
+    "equipes": 1,
+    "pessoas": 1,
+    "dep": "vdd22ey",
+    "lag": 2,
+    "inicioMin": "",
+    "custo": 120,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "g0ly6s8",
+    "etapa": "qmsuh8r",
+    "tipo": "unit",
+    "nome": "Revestimento cerâmico (piso e parede)",
+    "dur": 10,
+    "equipes": 1,
+    "pessoas": 2,
+    "dep": "3vyqjbk",
+    "lag": 3,
+    "inicioMin": "",
+    "custo": 20497.73,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "0923q3k",
+    "etapa": "qmsuh8r",
+    "tipo": "unit",
+    "nome": "Granito das janelas (peitoris)",
+    "dur": 1,
+    "equipes": 1,
+    "pessoas": 2,
+    "dep": "g0ly6s8",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 0,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "1tgl6lm",
+    "etapa": "bncsr4q",
+    "tipo": "unit",
+    "nome": "Instalação das janelas",
+    "dur": 1,
+    "equipes": 1,
+    "pessoas": 2,
+    "dep": "0923q3k",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 4400,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "ljizbqd",
+    "etapa": "rvylcmr",
+    "tipo": "unit",
+    "nome": "Finalização das instalações elétricas",
+    "dur": 2,
+    "equipes": 1,
+    "pessoas": 1,
+    "dep": "g0ly6s8",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 0,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "zsps8j3",
+    "etapa": "33ngi87",
+    "tipo": "unit",
+    "nome": "Pintura interna — início (fundo e massa)",
+    "dur": 6,
+    "equipes": 1,
+    "pessoas": 2,
+    "dep": "1tgl6lm",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 7543.2,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "cjjjojx",
+    "etapa": "k7h2g03",
+    "tipo": "unit",
+    "nome": "Instalação das bancadas",
+    "dur": 1,
+    "equipes": 1,
+    "pessoas": 2,
+    "dep": "zsps8j3",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 0,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "e4ad5lt",
+    "etapa": "k7h2g03",
+    "tipo": "unit",
+    "nome": "Louças e metais",
+    "dur": 1,
+    "equipes": 1,
+    "pessoas": 1,
+    "dep": "cjjjojx",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 2140,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "vcycx33",
+    "etapa": "5uagq4a",
+    "tipo": "unit",
+    "nome": "Portas internas",
+    "dur": 1,
+    "equipes": 1,
+    "pessoas": 1,
+    "dep": "cjjjojx",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 2250,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "76hf518",
+    "etapa": "5uagq4a",
+    "tipo": "unit",
+    "nome": "Pintura interna — acabamento",
+    "dur": 4,
+    "equipes": 1,
+    "pessoas": 2,
+    "dep": "e4ad5lt",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 4853.2,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "b1azz06",
+    "etapa": "f3n50ny",
+    "tipo": "global",
+    "nome": "Pintura dos portões",
+    "dur": 4,
+    "equipes": 1,
+    "pessoas": 1,
+    "dep": "1tgl6lm",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 6000,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "8jm83r9",
+    "etapa": "f3n50ny",
+    "tipo": "global",
+    "nome": "Motorização dos portões e interfonia",
+    "dur": 5,
+    "equipes": 1,
+    "pessoas": 2,
+    "dep": "b1azz06",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 9134,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "zffz256",
+    "etapa": "hfh21gz",
+    "tipo": "unit",
+    "nome": "Limpeza final",
+    "dur": 1,
+    "equipes": 1,
+    "pessoas": 2,
+    "dep": "76hf518",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 0,
+    "periodos": [],
+    "trav": []
+   },
+   {
+    "id": "rwmpp5b",
+    "etapa": "hfh21gz",
+    "tipo": "global",
+    "nome": "Vistoria e entrega",
+    "dur": 1,
+    "equipes": 1,
+    "pessoas": 1,
+    "dep": "zffz256",
+    "lag": 0,
+    "inicioMin": "",
+    "custo": 0,
+    "periodos": [],
+    "trav": []
+   }
+  ],
+  "exec": {
+   "takog9v": {
+    "g": "2026-08-20"
+   },
+   "qkpauvs": {
+    "g": "2026-08-31"
+   },
+   "lt0jo7h": {
+    "g": "2026-09-22"
+   },
+   "hrk34oo": {
+    "g": "2026-09-22"
+   }
+  },
+  "gastos": [
+   {
+    "id": "ypij0cu",
+    "et": "fy2jnbb",
+    "sid": "takog9v",
+    "cat": "Mão de obra",
+    "desc": "Mão de obra — limpeza",
+    "valor": 800,
+    "pago": 800,
+    "venc": "2026-08-20",
+    "obs": ""
+   },
+   {
+    "id": "p7l35ae",
+    "et": "fy2jnbb",
+    "sid": "qkpauvs",
+    "cat": "Mão de obra",
+    "desc": "Mão de obra — mestras",
+    "valor": 4200,
+    "pago": 4200,
+    "venc": "2026-08-31",
+    "obs": ""
+   },
+   {
+    "id": "mq29kav",
+    "et": "fy2jnbb",
+    "sid": "qkpauvs",
+    "cat": "Material",
+    "desc": "Cimento e cal",
+    "valor": 403.51,
+    "pago": 403.51,
+    "venc": "2026-08-31",
+    "obs": ""
+   },
+   {
+    "id": "1rnhnzk",
+    "et": "fy2jnbb",
+    "sid": "qkpauvs",
+    "cat": "Material",
+    "desc": "Areia",
+    "valor": 350,
+    "pago": 350,
+    "venc": "2026-08-31",
+    "obs": ""
+   },
+   {
+    "id": "tuk80fr",
+    "et": "fy2jnbb",
+    "sid": "qkpauvs",
+    "cat": "Equipamentos / caçamba",
+    "desc": "Caçamba",
+    "valor": 300,
+    "pago": 300,
+    "venc": "2026-08-31",
+    "obs": ""
+   },
+   {
+    "id": "nph3fpa",
+    "et": "cbf73pu",
+    "sid": "",
+    "cat": "Material",
+    "desc": "Material de gesso e forro — notas quitadas",
+    "valor": 16440,
+    "pago": 16440,
+    "venc": "2026-09-22",
+    "obs": ""
+   },
+   {
+    "id": "0rfdsb5",
+    "et": "cbf73pu",
+    "sid": "",
+    "cat": "Material",
+    "desc": "Material de gesso e forro — nota fiscal em aberto",
+    "valor": 10615,
+    "pago": 0,
+    "venc": "2026-10-31",
+    "obs": "Pagamento proposto para outubro/2026 (relatório R02)"
+   },
+   {
+    "id": "53axnbp",
+    "et": "cbf73pu",
+    "sid": "lt0jo7h",
+    "cat": "Mão de obra",
+    "desc": "Mão de obra — gesso liso",
+    "valor": 16385,
+    "pago": 0,
+    "venc": "2026-10-16",
+    "obs": "Parcelamento proposto no R02 para a mão de obra total (R$ 37.945,00): R$ 10.000,00 em set/2026 + 2 x R$ 13.972,50 (16/10 e 16/11)"
+   },
+   {
+    "id": "h8pns9m",
+    "et": "cbf73pu",
+    "sid": "hrk34oo",
+    "cat": "Mão de obra",
+    "desc": "Mão de obra — forro de gesso",
+    "valor": 21560,
+    "pago": 0,
+    "venc": "2026-11-16",
+    "obs": "Ver parcelamento da mão de obra do gesso (R02)"
+   }
+  ],
+  "projetos": [],
+  "relatorios": [
+   {
+    "n": 2,
+    "de": "2026-09-01",
+    "ate": "2026-09-23",
+    "obs": "Relatório R02 — conclusão do gesso liso e forro (emitido fora do app)",
+    "emitido": "2026-09-23"
+   }
+  ],
+  "criado": 1791326426294
+ }
+}
