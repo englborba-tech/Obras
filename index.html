@@ -189,7 +189,7 @@ function normalizar(o){
   const ids=new Set(o.etapas.map(e=>e.id));
   (o.servicos=o.servicos||[]).forEach(s=>{if(!ids.has(s.etapa))s.etapa=o.etapas[0].id;if(s.pessoas==null)s.pessoas=0;if(!s.periodos)s.periodos=[];if(!s.tipo)s.tipo="unit";});
   o.servicos.forEach(s=>{if(!s.trav)s.trav=[];if(s.lib&&s.lib.st==="travada"){s.trav.push({de:s.lib.data,ate:null,motivo:s.lib.motivo||""});s.lib=s.lib.ant||{st:"liberada",data:s.lib.data};}});
-  o.exec=o.exec||{};o.projetos=o.projetos||[];o.gastos=o.gastos||[];
+  o.exec=o.exec||{};o.projetos=o.projetos||[];o.gastos=o.gastos||[];o.materiais=o.materiais||[];
   o.gastos.forEach(g=>{if(!Array.isArray(g.pags))g.pags=(+g.pago>0)?[{id:uid(),data:g.venc||"",valor:+g.pago,obs:""}]:[];g.pago=Math.round(g.pags.reduce((a,p)=>a+(+p.valor||0),0)*100)/100;});
   return o;}
 function ordenar(o){normalizar(o);const ord={};o.etapas.forEach((e,i)=>ord[e.id]=i);
@@ -276,8 +276,22 @@ function calcular(o){
   const dias=Math.ceil(fim)+1,efe=new Array(dias).fill(0);
   const add=(a,b,p)=>{for(let x=Math.floor(a+1e-9);x<Math.ceil(b-1e-9)&&x<dias;x++)efe[x]+=p;};
   ordem.forEach(r=>{if(!r.pes)return;if(r.tp==="unit")r.un.forEach(u=>add(u.ini,u.fim,r.pes));else r.per.forEach(p=>add(p.ini,p.fim,r.pes));});
-  return{cal,N,ordem,fim,efe,custo:ordem.reduce((a,r)=>a+r.custo,0)};
+  ordem.forEach(r=>{r.mo=r.custo;r.mat=(o.materiais||[]).filter(m=>m.sid===r.s.id).reduce((a,m)=>a+matTotal(m,r.s,N),0);r.custo=r.mo+r.mat;});
+  const C={cal,N,ordem,fim,efe,custo:ordem.reduce((a,r)=>a+r.custo,0),mat:ordem.reduce((a,r)=>a+r.mat,0)};
+  // gastos com data "pela execução": acompanham o cronograma e a conclusão marcada na aba Execução
+  (o.gastos||[]).forEach(g=>{if(g.vencAuto){const v=vencExec(o,C,g.sid,g.vencAuto==="ini");if(v)g.venc=v;}});
+  return C;
 }
+// data de pagamento de uma subetapa: conclusão real (se já marcada na Execução) ou término previsto no cronograma
+const r2=v=>Math.round(v*100)/100;
+// materiais: quantidade total e valor total de um material preso a uma subetapa
+const matMult=(m,s,N)=>m.porUn&&s&&(s.tipo||"unit")==="unit"?N:1;
+const matQtd=(m,s,N)=>(+m.qtd||0)*matMult(m,s,N);
+const matTotal=(m,s,N)=>r2(m.modo==="total"?(+m.preco||0)*matMult(m,s,N):matQtd(m,s,N)*(+m.preco||0));
+function vencExec(o,c,sid,ini){const r=c.ordem.find(x=>x.s.id===sid);if(!r)return "";if(ini)return c.cal.iso(c.cal.data(r.inicio));const ex=(o.exec&&o.exec[sid])||{};
+  let ds;if(r.tp==="unit")ds=Array.from({length:c.N},(_,i)=>ex[i]);else if(r.tp==="global")ds=[ex.g];else ds=r.per.map((p,i)=>ex["p"+i]);
+  if(ds.length&&ds.every(Boolean))return ds.slice().sort().pop();
+  return c.cal.iso(c.cal.fim(r.fim));}
 
 // ---------- Estado ----------
 let db=null,obras=[],atual=null,aba="geral",salvarT=null,pend=null,gravando=0,ultimaGrav=0,fila=Promise.resolve();
@@ -327,10 +341,10 @@ async function novaObra(){
 function telaObra(a,o){
   a.append(el("div",{class:"top"},el("button",{onclick:()=>{atual=null;render();}},"‹"),el("h1",null,o.nome)));
   const tabs=el("div",{class:"tabs"});
-  [["geral","📊","Visão geral"],["dados","📋","Dados"],["proj","📐","Projetos"],["serv","🧱","Serviços"],["crono","📅","Cronograma"],["exec","✅","Execução"],["custos","💰","Custos"],["rel","📄","Relatórios"]]
+  [["geral","📊","Visão geral"],["dados","📋","Dados"],["proj","📐","Projetos"],["serv","🧱","Serviços"],["crono","📅","Cronograma"],["exec","✅","Execução"],["mat","📦","Materiais"],["custos","💰","Custos"],["rel","📄","Relatórios"]]
     .forEach(([k,ic,t])=>tabs.append(el("button",{class:aba===k?"on":"",onclick:()=>{aba=k;render();window.scrollTo(0,0);}},el("i",null,ic),t)));
   a.append(tabs);
-  ({geral:telaGeral,dados:telaDados,proj:telaProj,serv:telaServ,crono:telaCrono,exec:telaExec,rel:telaRel,custos:telaCustos}[aba]||telaGeral)(a,o);
+  ({geral:telaGeral,dados:telaDados,proj:telaProj,serv:telaServ,crono:telaCrono,exec:telaExec,rel:telaRel,custos:telaCustos,mat:telaMat}[aba]||telaGeral)(a,o);
 }
 
 function campo(lbl,inp){return el("div",null,el("label",null,lbl),inp);}
@@ -773,7 +787,6 @@ function pdfRelatorio(o,R,num,obs){
 // ---------- Custos reais ----------
 const CATG=["Material","Mão de obra","Equipamentos / caçamba","Serviços de terceiros","Taxas e documentos","Outros"];
 const totGastos=l=>l.reduce((a,g)=>({valor:a.valor+(+g.valor||0),pago:a.pago+Math.min(+g.valor||0,+g.pago||0)}),{valor:0,pago:0});
-const r2=v=>Math.round(v*100)/100;
 function resumoCustos(o,c){
   const porEt=o.etapas.map(et=>{const rs=c.ordem.filter(r=>r.s.etapa===et.id),orc=rs.reduce((a,r)=>a+r.custo,0),gs=(o.gastos||[]).filter(g=>g.et===et.id),t=totGastos(gs);
     return{et,orc,...t,gs,rs};});
@@ -798,22 +811,82 @@ function formGasto(o,g,onOk){const novo=!g;g=g?JSON.parse(JSON.stringify(g)):{id
   const temPags=!novo&&(g.pags||[]).length>0;
   st.onchange=()=>{cpg.style.display=st.value==="parcial"?"":"none";};
   const vc=el("input",{type:"date",value:g.venc||""}),ob=el("input",{value:g.obs||"",placeholder:"Opcional"});
+  const md=el("select",null,el("option",{value:"fixa"},"Informar a data"),el("option",{value:"auto"},"Puxar da execução (término da subetapa)"),el("option",{value:"ini"},"Puxar do início da subetapa"));md.value=g.vencAuto&&g.sid?(g.vencAuto==="ini"?"ini":"auto"):"fixa";
+  const updD=()=>{const au=md.value!=="fixa";if(au&&!ss.value){toast("Escolha a subetapa para puxar a data");md.value="fixa";vc.disabled=false;return;}
+    vc.disabled=au;if(au){const v=vencExec(o,calcular(o),ss.value,md.value==="ini");if(v)vc.value=v;}};
+  md.onchange=updD;ss.onchange=()=>{if(md.value!=="fixa"){if(ss.value)updD();else{md.value="fixa";vc.disabled=false;}}};es.onchange=()=>{fillS();ss.onchange();};vc.disabled=md.value!=="fixa";
   const corpo=el("div",{style:"display:grid;gap:10px;max-height:70vh;overflow:auto"},campo("Etapa",es),campo("Subetapa",ss),el("div",{class:"g2"},campo("Categoria",cs),campo("Valor (R$)",va)),
-    campo("Descrição",de),temPags?el("div",{class:"g2"},campo("Data / vencimento",vc)):el("div",{class:"g2"},campo("Situação",st),campo("Data / vencimento",vc)),temPags?null:cpg,
+    campo("Descrição",de),temPags?el("div",{class:"g2"},campo("Data de pagamento",md),campo("Data / vencimento",vc)):el("div",{class:"g2"},campo("Situação",st),campo("Data de pagamento",md)),temPags?null:campo("Data / vencimento",vc),temPags?null:cpg,
     temPags?el("div",null,el("label",null,"Pagamentos registrados"),...g.pags.map((p,i)=>el("div",{style:"display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px solid var(--bd)"},
       el("span",{style:"flex:1"},brl(p.valor)+(p.data?" · "+fdI(p.data):"")+(p.obs?" · "+p.obs:"")),
       el("button",{class:"sm",type:"button",onclick:e=>{g.pags.splice(i,1);e.target.closest("div").remove();}},"✕")))):null,campo("Observação",ob));
   modal(novo?"Lançar gasto":"Editar gasto",corpo,[["Salvar","pri",()=>{const v=num(va.value);if(!(v>0)){toast("Informe o valor");return false;}
-      g.et=es.value;g.sid=ss.value;g.cat=cs.value;g.desc=de.value.trim()||cs.value;g.valor=r2(v);g.venc=vc.value;g.obs=ob.value.trim();
+      g.et=es.value;g.sid=ss.value;g.cat=cs.value;g.desc=de.value.trim()||cs.value;g.valor=r2(v);g.venc=vc.value;g.vencAuto=md.value==="fixa"||!ss.value?false:(md.value==="ini"?"ini":true);g.obs=ob.value.trim();
       if(!temPags){const pv=st.value==="pago"?g.valor:st.value==="apagar"?0:r2(Math.min(g.valor,num(pg.value)));g.pags=pv>0?[{id:uid(),data:st.value==="pago"?(g.venc||hojeISO()):hojeISO(),valor:pv,obs:""}]:[];}
       syncPago(g);
       o.gastos=o.gastos||[];const i=o.gastos.findIndex(x=>x.id===g.id);if(i>=0)o.gastos[i]=g;else o.gastos.push(g);salvar(o);render();onOk&&onOk();toast("Gasto salvo");}],["Cancelar"]]);}
+// ---------- Materiais (presos a uma subetapa) ----------
+const UNS=["un","saco","m","m²","m³","kg","lata","barra","peça","milheiro","L","vb"];
+function formMat(o,m,sidIni){const novo=!m,N=Math.max(1,+o.unidades||1),P=(o.prefixo||"Unidade").trim();
+  m=m?JSON.parse(JSON.stringify(m)):{id:uid(),sid:sidIni||"",nome:"",un:"un",qtd:0,preco:0,modo:"unit",porUn:false,obs:""};
+  if(!o.servicos.length){toast("Cadastre as subetapas na aba Serviços primeiro");return;}
+  const sv0=o.servicos.find(x=>x.id===m.sid)||o.servicos[0];
+  const es=el("select");o.etapas.forEach(e=>es.append(el("option",{value:e.id},e.nome)));es.value=sv0.etapa;
+  const ss=el("select");const fillS=()=>{ss.innerHTML="";o.servicos.filter(x=>x.etapa===es.value).forEach(x=>ss.append(el("option",{value:x.id},x.nome)));if([...ss.options].some(x=>x.value===m.sid))ss.value=m.sid;};fillS();
+  const nm=el("input",{value:m.nome||"",placeholder:"Ex.: Laje treliçada pré-moldada, cimento, areia…"});
+  const qt=el("input",{inputmode:"decimal",value:m.qtd?String(m.qtd).replace(".",","):"",placeholder:"0"});
+  const un=el("select");[...new Set([...UNS,m.un||"un"])].forEach(x=>un.append(el("option",null,x)));un.value=m.un||"un";
+  const md=el("select",null,el("option",{value:"unit"},"Preço por unidade do material"),el("option",{value:"total"},"Valor total do material"));md.value=m.modo||"unit";
+  const pr=el("input",{inputmode:"decimal",value:m.preco?String(m.preco).replace(".",","):"",placeholder:"0,00"});
+  const pu=el("select",null,el("option",{value:"0"},"Total da obra"),el("option",{value:"1"},"Por "+P+" (× "+N+")"));pu.value=m.porUn?"1":"0";const cpu=campo("Quantidade e valor informados são",pu);
+  const ob=el("input",{value:m.obs||"",placeholder:"Opcional: fornecedor, marca, observação"});
+  const tot=el("p",{style:"margin:0;font-weight:700"}),cpr=campo("",pr);
+  const ler=()=>({...m,sid:ss.value,nome:nm.value.trim(),un:un.value,qtd:num(qt.value),preco:r2(num(pr.value)),modo:md.value,porUn:pu.value==="1",obs:ob.value.trim()});
+  const upd=()=>{const sv=o.servicos.find(x=>x.id===ss.value),porUnOk=sv&&(sv.tipo||"unit")==="unit"&&N>1;cpu.style.display=porUnOk?"":"none";if(!porUnOk)pu.value="0";
+    cpr.querySelector("label").textContent=md.value==="total"?"Valor total (R$)":"Preço por "+un.value+" (R$)";const x=ler();
+    tot.textContent="Total: "+brl(matTotal(x,sv,N))+" · "+n1(matQtd(x,sv,N))+" "+x.un;};
+  es.onchange=()=>{fillS();upd();};[ss,un,md,pu].forEach(x=>x.onchange=upd);[qt,pr].forEach(x=>x.oninput=upd);upd();
+  modal(novo?"Adicionar material":"Editar material",el("div",{style:"display:grid;gap:10px;max-height:70vh;overflow:auto"},campo("Etapa",es),campo("Subetapa (serviço)",ss),campo("Material",nm),
+      el("div",{class:"g2"},campo("Quantidade",qt),campo("Unidade",un)),el("div",{class:"g2"},campo("Valor informado como",md),cpr),cpu,campo("Observação",ob),tot),
+    [["Salvar","pri",()=>{const x=ler();if(!x.nome){toast("Informe o material");return false;}if(!x.sid){toast("Escolha a subetapa");return false;}if(!(x.qtd>0)&&x.modo!=="total"){toast("Informe a quantidade");return false;}
+      o.materiais=o.materiais||[];const i=o.materiais.findIndex(y=>y.id===x.id);if(i>=0)o.materiais[i]=x;else o.materiais.push(x);
+      (o.gastos||[]).forEach(g=>{if(g.mid===x.id&&!(g.pags||[]).length){g.valor=matTotal(x,o.servicos.find(y=>y.id===x.sid),N);g.desc=x.nome;g.sid=x.sid;g.et=o.servicos.find(y=>y.id===x.sid).etapa;}});
+      salvar(o);render();toast("Material salvo");}],["Cancelar"]]);}
+function telaMat(a,o){
+  const c=calcular(o),N=c.N,P=(o.prefixo||"Un.").trim(),ms=o.materiais||[],mo=c.ordem.reduce((x,r)=>x+r.mo,0);
+  a.append(el("div",{class:"card"},el("h2",null,"Materiais da obra"),el("div",{class:"kpi"},
+    ...[["Materiais",brl(c.mat)],["Serviços / mão de obra",brl(mo)],["Total orçado",brl(c.custo)],["Itens",String(ms.length)]].map(([t,v])=>el("div",null,el("small",null,t),el("b",null,v)))),
+    el("p",{class:"hint",style:"margin:10px 0 0"},"Cada material fica preso a uma subetapa. O valor entra no orçado da subetapa e, na aba Custos, o botão \"Gerar a pagar pelo orçamento\" cria a compra na data de início dela."),
+    el("button",{class:"pri",style:"width:100%;margin-top:12px",onclick:()=>formMat(o)},"+ Adicionar material")));
+  if(!ms.length)return;
+  o.etapas.forEach(et=>{const rs=c.ordem.filter(r=>r.s.etapa===et.id&&ms.some(m=>m.sid===r.s.id));if(!rs.length)return;
+    const cd=el("div",{class:"card"},el("h2",null,et.nome+" — "+brl(rs.reduce((x,r)=>x+r.mat,0))));
+    rs.forEach(r=>{cd.append(el("div",{class:"sec",style:"display:flex;gap:8px;align-items:center"},el("span",{style:"flex:1"},r.s.nome+" · "+fd(c.cal.data(r.inicio))+" a "+fd(c.cal.fim(r.fim))+" · "+brl(r.mat)),
+        el("button",{class:"sm",title:"Adicionar material a esta subetapa",onclick:()=>formMat(o,null,r.s.id)},"+")));
+      ms.filter(m=>m.sid===r.s.id).forEach(m=>{const t=matTotal(m,r.s,N),q=matQtd(m,r.s,N),g=(o.gastos||[]).find(x=>x.mid===m.id);
+        cd.append(el("div",{class:"proj"},el("div",{class:"inf"},el("b",null,m.nome+" — "+brl(t)),
+          el("small",null,[n1(q)+" "+(m.un||"un")+(m.porUn&&r.tp==="unit"?" ("+n1(+m.qtd||0)+" por "+P+")":""),q>0?brl(t/q)+" por "+(m.un||"un"):null,m.obs||null].filter(Boolean).join(" · "))),
+          g?el("span",{class:"tag2"+(g.pago>=g.valor&&g.valor>0?" ok":"")},g.pago>=g.valor&&g.valor>0?"Pago":g.pago>0?"Pago em parte":"A pagar"):null,
+          el("button",{class:"sm",title:"Editar",onclick:()=>formMat(o,m)},"✎"),
+          el("button",{class:"sm",title:"Excluir",onclick:async()=>{if(await ask(`Excluir "${m.nome}" (${brl(t)})?`+(g?" O gasto já lançado na aba Custos continua lá.":""),[["Excluir",true,"dan"],["Cancelar",false]])){o.materiais=o.materiais.filter(x=>x.id!==m.id);salvar(o);render();}}},"✕")));});});
+    a.append(cd);});
+}
 function telaCustos(a,o){
   const c=calcular(o),R=resumoCustos(o,c);
   a.append(el("div",{class:"card"},el("h2",null,"Resumo financeiro"),el("div",{class:"kpi"},
     ...[["Orçado (planejamento)",brl(R.orc)],["Gasto lançado",brl(R.valor)],["Pago",brl(R.pago),"var(--ok)"],["A pagar",brl(R.valor-R.pago),R.valor-R.pago>0?"var(--wa)":""]]
       .map(([t,v,cor])=>el("div",null,el("small",null,t),el("b",{style:cor?"color:"+cor:""},v)))),
-    el("button",{class:"pri",style:"width:100%;margin-top:12px",onclick:()=>formGasto(o)},"+ Lançar gasto")));
+    el("button",{class:"pri",style:"width:100%;margin-top:12px",onclick:()=>formGasto(o)},"+ Lançar gasto"),
+    (()=>{const pend=c.ordem.filter(r=>r.mo>0&&!(o.gastos||[]).some(g=>g.sid===r.s.id&&!g.mid)),pm=(o.materiais||[]).filter(m=>o.servicos.some(x=>x.id===m.sid)&&!(o.gastos||[]).some(g=>g.mid===m.id)).map(m=>({m,sv:o.servicos.find(x=>x.id===m.sid)})).map(x=>({...x,t:matTotal(x.m,x.sv,c.N)})).filter(x=>x.t>0);
+      const n=pend.length+pm.length;if(!n)return null;
+      return el("button",{style:"width:100%;margin-top:8px",onclick:()=>{const cs=el("select");CATG.forEach(x=>cs.append(el("option",null,x)));cs.value="Mão de obra";
+        modal("Gerar a pagar pelo orçamento",el("div",{style:"display:grid;gap:10px"},
+          pend.length?el("p",{class:"hint",style:"margin:0"},pend.length+" subetapa(s) com valor de serviço e sem gasto lançado, total "+brl(pend.reduce((x,r)=>x+r.mo,0))+". Cada uma vira um gasto \"a pagar\" na data de término da subetapa (ou da conclusão marcada na aba Execução)."):null,
+          pend.length?campo("Categoria dos serviços",cs):null,
+          pm.length?el("p",{class:"hint",style:"margin:0"},pm.length+" material(is) da aba Materiais sem gasto lançado, total "+brl(pm.reduce((x,y)=>x+y.t,0))+". Cada um vira um gasto \"a pagar\" na categoria Material, na data de início da subetapa."):null),
+          [["Gerar","pri",()=>{o.gastos=o.gastos||[];pend.forEach(r=>o.gastos.push({id:uid(),et:r.s.etapa,sid:r.s.id,cat:cs.value,desc:r.s.nome,valor:r2(r.mo),pago:0,pags:[],venc:vencExec(o,c,r.s.id),vencAuto:true,obs:""}));
+            pm.forEach(({m,sv,t})=>o.gastos.push({id:uid(),et:sv.etapa,sid:sv.id,mid:m.id,cat:"Material",desc:m.nome,valor:t,pago:0,pags:[],venc:vencExec(o,c,sv.id,true),vencAuto:"ini",obs:n1(matQtd(m,sv,c.N))+" "+(m.un||"un")}));
+            salvar(o);render();toast(n+" gasto(s) gerado(s)");}],["Cancelar"]]);}},"⟳ Gerar a pagar pelo orçamento ("+n+")");})()));
   // a pagar por mês
   const ab=(o.gastos||[]).filter(g=>(+g.valor||0)-(+g.pago||0)>0.004);
   if(ab.length){const pm={};ab.forEach(g=>{const k=g.venc?g.venc.slice(0,7):"sem data";(pm[k]=pm[k]||[]).push(g);});
@@ -830,7 +903,7 @@ function telaCustos(a,o){
       el("td",{class:"r",style:x.valor-x.pago>0?"color:var(--wa);font-weight:600":""},x.valor-x.pago>0?brl(x.valor-x.pago):"—"),
       el("td",{class:"r",style:pct!=null&&pct>100?"color:var(--no);font-weight:600":""},pct==null?"—":n1(pct)+"%")));});
   tb.append(el("tr",{style:"font-weight:700"},el("td",null,"Total"),el("td",{class:"r"},brl(R.orc)),el("td",{class:"r"},brl(R.valor)),el("td",{class:"r"},brl(R.pago)),el("td",{class:"r"},brl(R.valor-R.pago)),el("td",{class:"r"},R.orc?n1(R.valor/R.orc*100)+"%":"—")));
-  t.append(tb);a.append(el("div",{class:"card"},el("h2",null,"Orçado × gasto por etapa"),el("p",{class:"hint"},"O orçado vem do custo informado em cada subetapa (aba Serviços). O gasto vem dos lançamentos abaixo."),el("div",{class:"tw"},t)));
+  t.append(tb);a.append(el("div",{class:"card"},el("h2",null,"Orçado × gasto por etapa"),el("p",{class:"hint"},"O orçado soma o custo de cada subetapa (aba Serviços) com os materiais presos a ela (aba Materiais). O gasto vem dos lançamentos abaixo."),el("div",{class:"tw"},t)));
   // lista de gastos
   const lst=el("div",{class:"card"},el("h2",null,"Gastos lançados ("+(o.gastos||[]).length+")"));
   if(!(o.gastos||[]).length)lst.append(el("p",{class:"hint"},"Nenhum gasto lançado ainda."));
@@ -839,7 +912,7 @@ function telaCustos(a,o){
     [...gr.gs].sort((x,y)=>(x.venc||"").localeCompare(y.venc||"")).forEach(g=>{const ap=r2((+g.valor||0)-(+g.pago||0)),sv=o.servicos.find(x=>x.id===g.sid);
       const tag=ap<=0?el("span",{class:"tag2 ok"},"Pago"):g.pago>0?el("span",{class:"tag2",style:"color:var(--wa)"},"Falta "+brl(ap)):el("span",{class:"tag2",style:"background:color-mix(in srgb,var(--wa) 18%,transparent);color:var(--wa)"},"A pagar");
       lst.append(el("div",{class:"proj"},el("div",{class:"inf"},el("b",null,g.desc+" — "+brl(g.valor)),
-        el("small",null,[g.cat,sv?sv.nome:null,g.venc?(ap>0?"vence ":"")+fdI(g.venc):null,g.obs||null].filter(Boolean).join(" · ")),
+        el("small",null,[g.cat,sv?sv.nome:null,g.venc?(ap>0?"vence ":"")+fdI(g.venc)+(g.vencAuto?(g.vencAuto==="ini"?" (pelo início do serviço)":" (pela execução)"):""):null,g.obs||null].filter(Boolean).join(" · ")),
         (g.pags||[]).length&&ap>0?el("small",{style:"display:block;color:var(--ok)"},"Pago: "+g.pags.map(p=>brl(p.valor)+(p.data?" em "+fdI(p.data):"")).join(" + ")):null),tag,
         ap>0?el("button",{class:"sm pri",title:"Registrar pagamento (total ou parcial)",onclick:()=>registrarPag(o,g)},"$ Pagar"):null,
         el("button",{class:"sm",title:"Editar",onclick:()=>formGasto(o,g)},"✎"),
@@ -894,7 +967,7 @@ function telaServ(a,o){
         const r=await ask(`Excluir a etapa "${et.nome}"?`+(subs.length?` Ela tem ${subs.length} subetapa(s).`:""),[...(subs.length&&o.etapas.length>1?[["Excluir e mover subetapas para a etapa anterior/seguinte","mover","dan"]]:[]),["Excluir etapa e subetapas","tudo","dan"],["Cancelar",null]]);
         if(!r)return;const idx=o.etapas.indexOf(et);o.etapas.splice(idx,1);
         if(r==="mover"&&o.etapas.length){const alvo=o.etapas[Math.max(0,idx-1)];subs.forEach(s=>s.etapa=alvo.id);}
-        else{const rm=new Set(subs.map(s=>s.id));o.servicos=o.servicos.filter(s=>!rm.has(s.id));o.servicos.forEach(s=>{if(rm.has(s.dep))s.dep="";});}
+        else{const rm=new Set(subs.map(s=>s.id));o.servicos=o.servicos.filter(s=>!rm.has(s.id));o.materiais=(o.materiais||[]).filter(m=>!rm.has(m.sid));o.servicos.forEach(s=>{if(rm.has(s.dep))s.dep="";});}
         if(!o.etapas.length)o.etapas.push({id:uid(),nome:"Nova etapa"});salvar(o);render();}},"✕"));
     a.append(head);
     if(fechada)return;
@@ -908,7 +981,7 @@ function telaServ(a,o){
       card.append(el("div",{class:"svh"},el("button",{type:"button",title:"Escolher cor",style:`min-height:30px;width:30px;padding:0;border-radius:8px;background:${cor};border-color:${cor};flex:0 0 auto`,onclick:()=>escolherCor(o,s)}),nome,
         el("button",{title:"Subir",onclick:()=>mv(-1)},"↑"),el("button",{title:"Descer",onclick:()=>mv(1)},"↓"),
         el("button",{title:"Excluir",onclick:async()=>{if(!await ask(`Excluir "${s.nome}"?`,[["Excluir",true,"dan"],["Cancelar",false]]))return;
-          const dep=s.dep;o.servicos.splice(o.servicos.indexOf(s),1);o.servicos.forEach(x=>{if(x.dep===s.id)x.dep=dep;});delete o.exec[s.id];salvar(o);render();}},"✕")));
+          const dep=s.dep;o.servicos.splice(o.servicos.indexOf(s),1);o.servicos.forEach(x=>{if(x.dep===s.id)x.dep=dep;});delete o.exec[s.id];o.materiais=(o.materiais||[]).filter(m=>m.sid!==s.id);salvar(o);render();}},"✕")));
       const numInp=(k,step,min)=>{const x=el("input",{type:"number",step,min,value:s[k]??"",inputmode:"decimal"});if(k==="dur"&&!(+s[k]>0)&&tipoDe(s)!=="periodos"){x.style.borderColor="var(--wa)";x.style.borderWidth="2px";x.placeholder="preencher";}x.onchange=()=>{s[k]=Math.max(min,num(x.value));x.value=s[k];salvar(o);};return x;};
       const es=el("select");o.etapas.forEach(e=>es.append(el("option",{value:e.id},e.nome)));es.value=s.etapa;
       es.onchange=()=>{s.etapa=es.value;o.servicos.splice(o.servicos.indexOf(s),1);o.servicos.push(s);salvar(o);render();};
