@@ -37,7 +37,10 @@ label{display:block;font-size:.78rem;color:var(--mut);margin-bottom:3px;font-wei
 @media(max-width:759px){.g6{display:grid;grid-template-columns:1fr 1fr;gap:10px}}
 .top{display:flex;align-items:center;gap:10px;margin-bottom:12px}.top h1{margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tabs{display:flex;gap:6px;margin-bottom:12px;overflow-x:auto}
-.tabs button{flex:1;white-space:nowrap}.tabs button.on{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
+.tabs button{flex:1;white-space:nowrap}.hojeh small{color:var(--mut);text-transform:capitalize}
+.pn{cursor:pointer}.pn:hover{border-color:var(--ac)}
+.on2{background:var(--ac)!important;border-color:var(--ac)!important;color:#fff!important}
+.tabs button.on{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
 .obra{display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer}
 .obra small{color:var(--mut)}
 .sv{border-left:8px solid var(--c);}
@@ -189,7 +192,7 @@ function normalizar(o){
   const ids=new Set(o.etapas.map(e=>e.id));
   (o.servicos=o.servicos||[]).forEach(s=>{if(!ids.has(s.etapa))s.etapa=o.etapas[0].id;if(s.pessoas==null)s.pessoas=0;if(!s.periodos)s.periodos=[];if(!s.tipo)s.tipo="unit";});
   o.servicos.forEach(s=>{if(!s.trav)s.trav=[];if(s.lib&&s.lib.st==="travada"){s.trav.push({de:s.lib.data,ate:null,motivo:s.lib.motivo||""});s.lib=s.lib.ant||{st:"liberada",data:s.lib.data};}});
-  o.exec=o.exec||{};o.projetos=o.projetos||[];o.gastos=o.gastos||[];
+  o.exec=o.exec||{};o.prev=o.prev||{};o.materiais=o.materiais||[];o.compras=o.compras||{};o.projetos=o.projetos||[];o.gastos=o.gastos||[];
   o.gastos.forEach(g=>{if(!Array.isArray(g.pags))g.pags=(+g.pago>0)?[{id:uid(),data:g.venc||"",valor:+g.pago,obs:""}]:[];g.pago=Math.round(g.pags.reduce((a,p)=>a+(+p.valor||0),0)*100)/100;});
   return o;}
 function ordenar(o){normalizar(o);const ord={};o.etapas.forEach((e,i)=>ord[e.id]=i);
@@ -224,7 +227,7 @@ function calcular(o){
     const d=Math.max(0,+s.dur||0),k=gl?1:Math.max(1,Math.floor(+s.equipes||1)),lag=Math.max(0,+s.lag||0),pes=Math.max(0,+s.pessoas||0);
     const modo=s.modoInicio||(s.inicioMin?"min":"auto");
     const fixo=modo==="fixo"&&s.inicioFixo;
-    const libSt=libStatus(o,s),exS=(o.exec&&o.exec[s.id])||{};
+    const libSt=libStatus(o,s),exS=(o.exec&&o.exec[s.id])||{},pvS=(o.prev&&o.prev[s.id])||{};
     const pend=libSt==="pendente"&&tp!=="periodos";
     const libIdx=s.lib&&s.lib.st==="liberada"&&s.lib.data&&!fixo?cal.idx(s.lib.data):0;
     const pausas=(s.trav||[]).filter(p=>p.de).map(p=>{const a=cal.idx(p.de);return{a,b:p.ate?Math.max(a,cal.idx(p.ate)):Math.max(a,HOJE),pct:p.pct,src:p};}).sort((x,y)=>x.a-y.a);
@@ -244,6 +247,7 @@ function calcular(o){
     }else if(gl){
       let ini=Math.max(S0,libIdx,pred?pFimG+lag:S0);if(pend&&!exS.g)ini=Math.max(ini,HOJE);
       per=exS.g?[{ini,fim:ini+d}]:aplicarPausas(ini,d,pausas);
+      if(!exS.g&&pvS.g){const pf=cal.idx(pvS.g)+1,l=per[per.length-1];if(pf>l.fim)l.fim=pf;}
       const i0=per[0].ini,f0=per[per.length-1].fim;
       for(let i=0;i<N;i++)un.push({ini:i0,fim:f0,eq:0,espera:0});
     }else{
@@ -256,6 +260,7 @@ function calcular(o){
         if(w>1e-6){espera+=w;if(primeiraEspera===null)primeiraEspera=i;}
         let fim=ini+d,par=0;
         if(!exS[i])for(const p of pausas){if(p.b<=ini||p.a>=fim)continue;if(p.a<=ini){par+=p.b-ini;ini=p.b;fim=ini+d;}else{par+=p.b-p.a;fim=p.b+(fim-p.a);}}
+        if(!exS[i]&&pvS[i]){const pf=cal.idx(pvS[i])+1;if(pf>fim)fim=pf;}
         un.push({ini,fim,eq:t,espera:w,par});free[t]=fim;usada[t]=true;
       }
       if(pred)for(let i=0;i<N;i++)ideal=Math.max(ideal,(pred.gl?pFimG:pFimU(i))+lag-Math.floor(i/k)*d);
@@ -268,7 +273,7 @@ function calcular(o){
     const inicio=Math.min(...un.map(u=>u.ini)),fim=Math.max(...un.map(u=>u.fim));
     const diasTrab=tp==="unit"?d*N:per.reduce((a,p)=>a+(p.fim-p.ini),0);
     const r={s,cal,tp,gl,fixo,libSt,pausas,cor:CM[s.id],un,per,inicio,fim,espera,primeiraEspera,ideal,folga,pred:pred||(fixo?predReal:null),predUn:pred&&!pred.gl,aviso,k,d,pes,diasTrab,
-      ritmo:d?k/d*(o.sabado?6:5):0,semDur:!d,custo:tp==="unit"?(+s.custo||0)*N:(+s.custo||0),hh:pes*k*(tp==="unit"?d*N/k:diasTrab)};
+      ritmo:d?k/d*(o.sabado?6:5):0,semDur:!d,custo:(tp==="unit"?(+s.custo||0)*N:(+s.custo||0))+matServ(o,s,N),mo:tp==="unit"?(+s.custo||0)*N:(+s.custo||0),hh:pes*k*(tp==="unit"?d*N/k:diasTrab)};
     res[s.id]=r;ordem.push(r);
   });
   const fim=ordem.length?Math.max(...ordem.map(r=>r.fim)):0;
@@ -286,19 +291,252 @@ function salvar(o){pend=o;clearTimeout(salvarT);salvarT=setTimeout(()=>{const x=
   const {id,...dados}=JSON.parse(JSON.stringify(x));gravando++;
   ultimaGrav=Date.now();
   // envia na hora (sem esperar a anterior): offline, o Firebase guarda na fila local e sobe quando a internet voltar
-  db.collection("obras").doc(id).set(dados).catch(()=>toast("Erro ao salvar")).finally(()=>{gravando--;ultimaGrav=Date.now();});},400);}
+  db.collection("obras").doc(id).set(dados).catch(()=>toast("Erro ao salvar")).finally(()=>{gravando--;ultimaGrav=Date.now();});syncAgenda(x);},400);}
 const ocupado=()=>pend||Date.now()-ultimaGrav<1500;
 
 // ---------- Telas ----------
+
+// ---------- Hoje / Painel / Atrasos ----------
+// ---------- Materiais + compra automática ----------
+const UNS=["un","saco","m","m²","m³","kg","lata","barra","peça","milheiro","L","vb"];
+const ANTEC_PADRAO=7;
+function matQtd(m,sv,N){return (+m.qtd||0)*(m.porUn&&sv&&(sv.tipo||"unit")==="unit"?N:1);}
+function matTotal(m,sv,N){return r2(m.modo==="total"?(+m.preco||0)*(m.porUn&&sv&&(sv.tipo||"unit")==="unit"?N:1):(+m.preco||0)*matQtd(m,sv,N));}
+function matServ(o,s,N){return (o.materiais||[]).filter(m=>m.sid===s.id).reduce((a,m)=>a+matTotal(m,s,N),0);}
+const antecDe=m=>m.antec===""||m.antec==null?ANTEC_PADRAO:Math.max(0,+m.antec||0);
+// uma compra por subetapa: data = início − maior antecedência entre os materiais dela
+function comprasObra(o,c){c=c||calcular(o);const out=[];
+  c.ordem.forEach(r=>{const ms=(o.materiais||[]).filter(m=>m.sid===r.s.id),gen=!ms.length;
+    const ex=o.exec[r.s.id]||{},iniciado=Object.keys(ex).length>0;
+    const ini=r.cal.iso(r.cal.data(r.inicio)),ant=gen?ANTEC_PADRAO:Math.max(...ms.map(antecDe));
+    out.push({o,r,sid:r.s.id,ms,gen,ini,data:addDiaN(ini,-ant),ant,iniciado,comprado:o.compras[r.s.id]||null,
+      itens:ms.map(m=>({nome:m.nome,qtd:r2(matQtd(m,r.s,c.N)),un:m.un||"un"})),total:ms.reduce((a,m)=>a+matTotal(m,r.s,c.N),0)});});
+  return out;}
+const MSG_GEN="Etapa vai iniciar: verificar e comprar os materiais necessários (sem lista cadastrada)";
+const listaItens=x=>x.gen?MSG_GEN:x.itens.map(i=>n1(i.qtd)+" "+i.un+" "+i.nome).join(", ");
+function marcarComprado(o,sid,data){o.compras[sid]=data||hojeISO();salvar(o);
+  const d=agendaCache[agId(o.id,sid)];if(d&&d.st!=="ok"&&db)db.collection("agenda").doc(agId(o.id,sid)).set({st:"ok",doneAt:o.compras[sid],atualizado:Date.now()},{merge:true}).catch(()=>{});
+  render();toast("Compra registrada");}
+function desfazerCompra(o,sid){delete o.compras[sid];salvar(o);
+  if(agendaCache[agId(o.id,sid)]&&db)db.collection("agenda").doc(agId(o.id,sid)).set({st:"",doneAt:null,atualizado:Date.now()},{merge:true}).catch(()=>{});render();}
+function formMat(o,m,sidIni){const novo=!m,N=Math.max(1,+o.unidades||1),P=(o.prefixo||"Unidade").trim();
+  if(!o.servicos.length){toast("Cadastre as subetapas na aba Serviços primeiro");return;}
+  m=m?JSON.parse(JSON.stringify(m)):{id:uid(),sid:sidIni||"",nome:"",un:"un",qtd:0,preco:0,modo:"unit",porUn:false,antec:"",obs:""};
+  const sv0=o.servicos.find(x=>x.id===m.sid)||o.servicos[0];
+  const es=el("select");o.etapas.forEach(e=>es.append(el("option",{value:e.id},e.nome)));es.value=sv0.etapa;
+  const ss=el("select");const fillS=()=>{ss.innerHTML="";o.servicos.filter(x=>x.etapa===es.value).forEach(x=>ss.append(el("option",{value:x.id},x.nome)));if([...ss.options].some(x=>x.value===m.sid))ss.value=m.sid;};fillS();
+  const nm=el("input",{value:m.nome||"",placeholder:"Ex.: cimento, areia, laje treliçada…"});
+  const qt=el("input",{inputmode:"decimal",value:m.qtd?String(m.qtd).replace(".",","):"",placeholder:"0"});
+  const un=el("select");[...new Set([...UNS,m.un||"un"])].forEach(x=>un.append(el("option",null,x)));un.value=m.un||"un";
+  const md=el("select",null,el("option",{value:"unit"},"Preço por unidade do material"),el("option",{value:"total"},"Valor total"));md.value=m.modo||"unit";
+  const pr=el("input",{inputmode:"decimal",value:m.preco?String(m.preco).replace(".",","):"",placeholder:"0,00"});
+  const pu=el("select",null,el("option",{value:"0"},"Total da obra"),el("option",{value:"1"},"Por "+P.toLowerCase()+" (× "+N+")"));pu.value=m.porUn?"1":"0";const cpu=campo("Quantidade informada é",pu);
+  const an=el("input",{type:"number",min:"0",inputmode:"numeric",value:m.antec===""||m.antec==null?"":String(m.antec),placeholder:String(ANTEC_PADRAO)});
+  const ob=el("input",{value:m.obs||"",placeholder:"Opcional: fornecedor, marca…"});
+  const tot=el("p",{style:"margin:0;font-weight:700"}),cpr=campo("",pr);
+  const ler=()=>({...m,sid:ss.value,nome:nm.value.trim(),un:un.value,qtd:num(qt.value),preco:r2(num(pr.value)),modo:md.value,porUn:pu.value==="1",antec:an.value===""?"":Math.max(0,Math.floor(+an.value||0)),obs:ob.value.trim()});
+  const upd=()=>{const sv=o.servicos.find(x=>x.id===ss.value),ok=sv&&(sv.tipo||"unit")==="unit"&&N>1;cpu.style.display=ok?"":"none";if(!ok)pu.value="0";
+    cpr.querySelector("label").textContent=md.value==="total"?"Valor total (R$)":"Preço por "+un.value+" (R$)";const x=ler();
+    tot.textContent="Total: "+brl(matTotal(x,sv,N))+" · "+n1(matQtd(x,sv,N))+" "+x.un;};
+  es.onchange=()=>{fillS();upd();};[ss,un,md,pu].forEach(x=>x.onchange=upd);[qt,pr].forEach(x=>x.oninput=upd);upd();
+  const corpo=el("div",{style:"display:grid;gap:10px"},el("div",{class:"g2"},campo("Etapa",es),campo("Subetapa (serviço)",ss)),campo("Material",nm),
+    el("div",{class:"g2"},campo("Quantidade",qt),campo("Unidade",un)),el("div",{class:"g2"},campo("Forma de preço",md),cpr),cpu,
+    el("div",{class:"g2"},campo("Comprar quantos dias antes do início",an),campo("Observação",ob)),
+    el("p",{class:"hint",style:"margin:0"},"Deixe a antecedência em branco para usar "+ANTEC_PADRAO+" dias. Itens de entrega demorada (esquadrias, pré-moldados, elevador) costumam pedir 30 dias ou mais."),tot);
+  const bts=[["Salvar","pri",()=>{const x=ler();if(!x.nome){toast("Informe o material");return false;}if(!x.sid){toast("Escolha a subetapa");return false;}
+    const i=o.materiais.findIndex(y=>y.id===x.id);if(i>=0)o.materiais[i]=x;else o.materiais.push(x);salvar(o);render();toast(novo?"Material adicionado":"Material salvo");}]];
+  if(!novo)bts.push(["Excluir","dan",()=>{o.materiais=o.materiais.filter(y=>y.id!==m.id);salvar(o);render();toast("Material excluído");}]);
+  bts.push(["Cancelar"]);modal(novo?"Novo material":"Editar material",corpo,bts);}
+function telaMat(a,o){
+  ordenar(o);if(!o.servicos.length){a.append(el("p",{class:"st"},"Cadastre os serviços na aba Serviços."));return;}
+  const c=calcular(o),cps=comprasObra(o,c),hoje=hojeISO(),tot=cps.reduce((x,y)=>x+y.total,0);
+  const pend=cps.filter(x=>!x.gen&&!x.comprado&&!x.iniciado),atr=pend.filter(x=>x.data<hoje),sem=pend.filter(x=>x.data>=hoje&&x.data<=addDiaN(hoje,7));
+  a.append(el("div",{class:"card"},el("div",{class:"kpi"},el("div",null,el("small",null,"Materiais"),el("b",null,String(o.materiais.length))),
+    el("div",null,el("small",null,"Total orçado"),el("b",null,tot?brl(r2(tot)):"—")),
+    el("div",null,el("small",null,"Comprar em 7 dias"),el("b",{style:sem.length?"color:var(--wa)":""},String(sem.length))),
+    el("div",null,el("small",null,"Compras atrasadas"),el("b",{style:atr.length?"color:var(--no)":""},String(atr.length)))),
+    el("p",{class:"hint",style:"margin:10px 0 0"},"Cada material fica preso a uma subetapa. A data de compra é o início da subetapa menos a antecedência (padrão "+ANTEC_PADRAO+" dias) e acompanha o cronograma. As compras também vão para o app de Rotina e para a tela Hoje."),
+    el("button",{class:"pri",style:"width:100%;margin-top:10px",onclick:()=>formMat(o)},"+ Novo material")));
+  const gens=cps.filter(x=>x.gen&&!x.iniciado&&!(o.exec[x.sid]&&Object.keys(o.exec[x.sid]).length));
+  o.etapas.forEach(et=>{const rs=cps.filter(x=>!x.gen&&x.r.s.etapa===et.id);if(!rs.length)return;
+    const cd=el("div",{class:"card"},el("h2",null,et.nome));
+    rs.forEach(x=>{const st=x.comprado?el("span",{class:"tag2 ok"},"✓ Comprado "+fdI(x.comprado).slice(0,5)):x.iniciado?el("span",{class:"tag2 n"},"Serviço iniciado"):x.data<hoje?el("span",{class:"tag2 no"},"Atrasado"):x.data<=addDiaN(hoje,7)?el("span",{class:"tag2",style:"background:color-mix(in srgb,var(--wa) 20%,transparent);color:var(--wa)"},"Esta semana"):el("span",{class:"tag2 n"},"Comprar até "+fdI(x.data).slice(0,5));
+      const bl=el("div",{style:"border-top:1px solid var(--bd);padding:10px 0"},
+        el("div",{style:"display:flex;gap:8px;align-items:center;flex-wrap:wrap"},el("i",{class:"dot",style:"background:"+x.r.cor}),el("b",{style:"flex:1;min-width:0"},x.r.s.nome),st),
+        el("small",{style:"color:var(--mut);display:block;margin:2px 0 6px"},"Início do serviço "+fdI(x.ini)+" · comprar até "+fdI(x.data)+" ("+x.ant+" dias antes) · "+brl(r2(x.total))));
+      x.ms.forEach(m=>bl.append(el("div",{class:"proj",style:"cursor:pointer;padding:6px 0",onclick:()=>formMat(o,m)},
+        el("div",{class:"inf"},el("b",{style:"font-weight:500"},m.nome),el("small",null,n1(matQtd(m,x.r.s,c.N))+" "+(m.un||"un")+(m.porUn&&(x.r.s.tipo||"unit")==="unit"?" ("+n1(m.qtd)+" por "+(o.prefixo||"un").toLowerCase()+")":"")+" · "+brl(matTotal(m,x.r.s,c.N))+(m.antec!==""&&m.antec!=null?" · "+m.antec+" dias antes":"")+(m.obs?" · "+m.obs:""))),el("span",null,"›"))));
+      bl.append(el("div",{style:"display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"},
+        x.comprado?el("button",{class:"sm",onclick:()=>desfazerCompra(o,x.sid)},"Desfazer compra"):el("button",{class:"sm",style:"background:var(--ok);border-color:var(--ok);color:#fff",onclick:()=>marcarComprado(o,x.sid)},"✓ Comprado"),
+        el("button",{class:"sm",onclick:()=>formMat(o,null,x.sid)},"+ Material nesta subetapa")));
+      cd.append(bl);});
+    a.append(cd);});
+  if(!o.materiais.length)a.append(el("p",{class:"st"},"Nenhum material cadastrado."));
+  if(gens.length){const cd=el("div",{class:"card"},el("h2",null,"Subetapas sem lista de materiais"),
+      el("p",{class:"hint"},"Recebem um lembrete genérico "+ANTEC_PADRAO+" dias antes do início para verificar e comprar o necessário. Cadastre os materiais para o lembrete trazer a lista com as quantidades."));
+    gens.forEach(x=>{const late=!x.comprado&&x.data<hoje;cd.append(el("div",{class:"proj"},el("i",{class:"dot",style:"background:"+x.r.cor}),
+      el("div",{class:"inf"},el("b",null,x.r.s.nome),el("small",null,nomeEtapa(o,x.r.s.etapa)+" · início "+fdI(x.ini)+" · lembrete em "+fdI(x.data)+(x.comprado?" · ✓ resolvido":late?" · ⚠️ atrasado":""))),
+      x.comprado?el("button",{class:"sm",onclick:()=>desfazerCompra(o,x.sid)},"Desfazer"):el("button",{class:"sm",onclick:()=>marcarComprado(o,x.sid)},"✓ Resolvido"),
+      el("button",{class:"sm",onclick:()=>formMat(o,null,x.sid)},"+ Listar")));});
+    a.append(cd);}
+}
+// ----- integração com o app de Rotina (coleção "agenda" no Firebase) -----
+let agendaCache={},agendaOk=true,agendaPronta=false;const agId=(oid,sid)=>"obras_"+oid+"_"+sid;
+const slug=t=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/^(obra|edificio|casas?)\s+/,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").split("-").slice(0,2).join("-")||"obra";
+const syncT={};
+function syncAgenda(o){if(!db||!agendaOk||!agendaPronta)return;clearTimeout(syncT[o.id]);syncT[o.id]=setTimeout(()=>{
+  let cps;try{cps=comprasObra(o);}catch(e){return;}
+  const quer=new Set(),tag=o.tag||slug(o.nome);
+  cps.forEach(x=>{const id=agId(o.id,x.sid),atual=agendaCache[id]||{};quer.add(id);
+    const doc={titulo:(x.gen?"Preparar compras: ":"Comprar materiais: ")+x.r.s.nome,generico:!!x.gen,local:o.nome,hora:"",prio:x.gen?2:3,tags:[tag],rep:null,
+      itens:x.itens,detalhe:listaItens(x),dataObra:x.data,inicioServico:x.ini,total:r2(x.total),
+      origem:{app:"obras",obra:o.id,obraNome:o.nome,sid:x.sid}};
+    if(!atual.manual)doc.data=x.data;
+    if(x.comprado&&atual.st!=="ok"){doc.st="ok";doc.doneAt=x.comprado;}
+    else if(!x.comprado&&!atual.st&&!("st" in atual))doc.st="";
+    const chave=JSON.stringify(doc),velho=JSON.stringify(Object.fromEntries(Object.keys(doc).map(k=>[k,atual[k]])));
+    if(chave!==velho){doc.atualizado=Date.now();db.collection("agenda").doc(id).set(doc,{merge:true}).catch(e=>{if(e.code==="permission-denied")agendaOk=false;});}});
+  Object.entries(agendaCache).forEach(([id,d])=>{if(d.origem&&d.origem.app==="obras"&&d.origem.obra===o.id&&!quer.has(id)&&d.st!=="ok")db.collection("agenda").doc(id).delete().catch(()=>{});});
+},1500);}
+function ouvirAgenda(){if(!db)return;try{db.collection("agenda").onSnapshot(sn=>{agendaCache={};agendaPronta=true;sn.docs.forEach(d=>agendaCache[d.id]=d.data());
+  // compras concluídas no app de Rotina voltam como "comprado"
+  let mud=new Set();Object.values(agendaCache).forEach(d=>{if(!d.origem||d.origem.app!=="obras")return;const o=obras.find(x=>x.id===d.origem.obra);if(!o)return;o.compras=o.compras||{};
+    if(d.st==="ok"&&!o.compras[d.origem.sid]){o.compras[d.origem.sid]=d.doneAt||hojeISO();mud.add(o);}
+    else if(d.st!=="ok"&&o.compras[d.origem.sid]&&d.reaberto){delete o.compras[d.origem.sid];mud.add(o);}});
+  mud.forEach(o=>salvar(o));if(mud.size)render();
+  obras.forEach(syncAgenda);},e=>{agendaOk=false;});}catch(e){agendaOk=false;}}
+
+const nomeUn=(o,i)=>((o.prefixo||"Un.").trim())+" "+(i+1);
+function abrirObra(o,ab){atual=o.id;aba=ab||"geral";render();window.scrollTo(0,0);}
+// unidades (ou "g") que já deveriam ter terminado e não foram confirmadas
+function vencidos(o,c,hi){const out=[];
+  c.ordem.forEach(r=>{if(r.libSt==="travada"||r.tp==="periodos")return;const ex=o.exec[r.s.id]||{};
+    if(r.tp==="global"){if(!ex.g&&r.fim<=hi)out.push({r,chaves:["g"],fim:r.fim});return;}
+    const ch=[];r.un.forEach((u,i)=>{if(!ex[i]&&u.fim<=hi)ch.push(String(i));});
+    if(ch.length)out.push({r,chaves:ch,fim:Math.max(...ch.map(k=>r.un[+k].fim))});});
+  return out;}
+function impacto(o,mut){const cl=JSON.parse(JSON.stringify(o));mut(cl);
+  const c1=calcular(JSON.parse(JSON.stringify(o))),c2=calcular(cl),f1={};c1.ordem.forEach(r=>f1[r.s.id]=r.fim);
+  const emp=c2.ordem.filter(r=>r.fim>(f1[r.s.id]??r.fim)+0.01);
+  return{emp,dias:Math.max(0,Math.ceil(c2.fim-c1.fim-1e-9)),fim:c2.cal.fim(c2.fim),fim0:c1.cal.fim(c1.fim)};}
+function confirmarAtraso(o,v){const r=v.r,un=r.tp!=="global",nome=r.s.nome;
+  const quais=un?v.chaves.map(k=>nomeUn(o,+k)).join(", "):"";
+  const box=el("div",{style:"display:grid;gap:10px"});
+  box.append(el("p",{style:"margin:0"},`Pelo cronograma, ${un?quais+(v.chaves.length>1?" já deveriam":" já deveria"):"o serviço já deveria"} ter terminado em ${fd(r.cal.fim(v.fim))}. Terminou?`));
+  let sel=new Set(v.chaves);
+  if(un&&v.chaves.length>1){const g=el("div",{style:"display:flex;gap:6px;flex-wrap:wrap"});
+    v.chaves.forEach(k=>{const b=el("button",{class:"sm on2",onclick:()=>{sel.has(k)?sel.delete(k):sel.add(k);b.classList.toggle("on2");}},nomeUn(o,+k));g.append(b);});
+    box.append(el("small",{class:"hint",style:"margin:0"},"Toque para escolher a quais se aplica a resposta:"),g);}
+  const dSim=el("input",{type:"date",value:hojeISO(),max:hojeISO()});
+  const dNao=el("input",{type:"date",value:addDiaN(hojeISO(),3),min:hojeISO()});
+  const imp=el("div",{class:"alert",style:"margin:0"},"Escolha a nova data para ver o efeito no cronograma.");
+  const aplicarPrev=x=>{x.prev=x.prev||{};x.prev[r.s.id]=x.prev[r.s.id]||{};sel.forEach(k=>x.prev[r.s.id][k]=dNao.value);};
+  const verImp=()=>{if(!dNao.value||!sel.size)return;const m=impacto(o,aplicarPrev);
+    imp.className="alert "+(m.dias?"w":"o");imp.style.margin="0";
+    imp.textContent=m.dias?`Isso empurra ${m.emp.length} serviço${m.emp.length>1?"s":""} e o fim da obra em ${m.dias} dia${m.dias>1?"s":""} ${m.dias>1?"úteis":"útil"} (de ${fd(m.fim0)} para ${fd(m.fim)}).`+(m.emp.length?" Afetados: "+m.emp.slice(0,6).map(x=>x.s.nome).join(", ")+(m.emp.length>6?"…":""):"")
+      :m.emp.length?`Empurra ${m.emp.length} serviço${m.emp.length>1?"s":""} (${m.emp.slice(0,4).map(x=>x.s.nome).join(", ")}), mas o fim da obra continua em ${fd(m.fim)}.`:"Não muda o restante do cronograma.";};
+  dNao.onchange=verImp;
+  const passo=el("div",{style:"display:grid;gap:10px"});
+  const tela1=()=>{passo.innerHTML="";passo.append(
+    el("div",{class:"card",style:"margin:0;display:grid;gap:8px"},el("b",null,"✓ Sim, terminou"),campo("Concluído em",dSim),
+      el("button",{class:"pri",onclick:()=>{if(!sel.size)return toast("Escolha ao menos um");o.exec[r.s.id]=o.exec[r.s.id]||{};sel.forEach(k=>{o.exec[r.s.id][k]=dSim.value||hojeISO();if(o.prev[r.s.id])delete o.prev[r.s.id][k];});
+        salvar(o);fecharModal();render();toast("Conclusão registrada");avisarLiberacao(o,r.s.id);}},"Confirmar conclusão")),
+    el("div",{class:"card",style:"margin:0;display:grid;gap:8px"},el("b",null,"✗ Não, ainda não terminou"),campo("Nova previsão de término",dNao),imp,
+      el("button",{onclick:()=>{if(!sel.size)return toast("Escolha ao menos um");if(!dNao.value)return toast("Informe a nova data");aplicarPrev(o);salvar(o);fecharModal();render();toast("Cronograma reajustado");}},"Reajustar cronograma")));
+    verImp();};
+  tela1();box.append(passo);
+  modal(nome+" · "+nomeEtapa(o,r.s.etapa),box,[["Fechar"]]);}
+function fecharModal(){document.querySelectorAll(".modal").forEach(m=>m.remove());}
+function concluido(o,c,sid){const r=c.ordem.find(x=>x.s.id===sid);if(!r)return false;const ex=o.exec[sid]||{};
+  if(r.tp==="global")return !!ex.g;if(r.tp==="periodos")return r.per.every((p,i)=>ex["p"+i]);
+  return r.un.every((u,i)=>ex[i]);}
+function avisarLiberacao(o,sid){const c=calcular(o),feito=concluido(o,c,sid),src=o.servicos.find(s=>s.id===sid);if(!src)return;
+  const deps=c.ordem.filter(r=>r.s.dep===sid&&r.libSt==="pendente"&&(feito||(r.tp==="unit"&&!(src.tipo&&src.tipo!=="unit"))));
+  if(!deps.length){if(feito){const prox=c.ordem.filter(r=>r.s.dep===sid);if(prox.length)toast(`${src.nome} concluída · próximo: ${prox.map(r=>r.s.nome).join(", ")}`);}return;}
+  const box=el("div",{style:"display:grid;gap:8px"},el("p",{style:"margin:0"},feito?`${src.nome} foi concluída. Os serviços abaixo dependem dela e podem começar:`:`Com essa conclusão em ${src.nome}, já dá para começar:`));
+  const d=el("input",{type:"date",value:hojeISO()});
+  deps.forEach(r=>box.append(el("div",{class:"proj"},el("i",{class:"dot",style:"background:"+r.cor}),el("div",{class:"inf"},el("b",null,r.s.nome),el("small",null,"previsto para "+fd(r.cal.data(r.inicio)))))));
+  box.append(campo("Liberar a partir de",d));
+  setTimeout(()=>modal("🚦 Serviço liberado",box,[["Liberar "+(deps.length>1?"todos":"início"),"pri",()=>{deps.forEach(r=>r.s.lib={st:"liberada",data:d.value||hojeISO()});salvar(o);render();toast("Liberado");}],["Depois"]]),350);}
+function pagamentos(o,ate){return(o.gastos||[]).filter(g=>(+g.valor||0)-(+g.pago||0)>0.004&&g.venc&&g.venc<=ate);}
+function linhaHoje(o,r,txt,extra){return el("div",{class:"proj"},el("i",{class:"dot",style:"background:"+(r?r.cor:"var(--mut)")}),
+  el("div",{class:"inf",style:"cursor:pointer",onclick:()=>abrirObra(o,r?"exec":"custos")},el("b",null,txt[0]),el("small",null,txt[1])),...(extra||[]));}
+function telaHoje(a){
+  const hoje=hojeISO(),d=new Date(),sem=addDiaN(hoje,7);
+  a.append(el("div",{class:"card hojeh"},el("small",null,d.toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})),el("h2",{style:"margin:2px 0 0"},(d.getHours()<12?"Bom dia":d.getHours()<18?"Boa tarde":"Boa noite")+", Lucas")));
+  if(!obras.length){a.append(el("p",{class:"st"},"Nenhuma obra cadastrada."));return;}
+  const sec={conf:[],ini:[],fim:[],lib:[],trav:[],pag:[],mat:[]};let nTot=0;
+  obras.forEach(o=>{let c;try{c=calcular(o);}catch(e){return;}if(!c.ordem.length)return;const cal=c.cal,hi=cal.idx(hoje),hojeUtil=cal.iso(cal.data(hi))===hoje;
+    vencidos(o,c,hi).forEach(v=>sec.conf.push({o,v}));
+    c.ordem.forEach(r=>{if(r.libSt==="travada"){sec.trav.push({o,r});return;}const ex=o.exec[r.s.id]||{};
+      if(r.libSt==="pendente"&&r.inicio<=hi){sec.lib.push({o,r});return;}
+      if(!hojeUtil||r.tp==="periodos")return;
+      if(r.tp==="global"){if(ex.g)return;if(Math.floor(r.inicio+1e-9)===hi)sec.ini.push({o,r,ch:[]});if(Math.ceil(r.fim-1e-9)-1===hi)sec.fim.push({o,r,ch:["g"]});return;}
+      const ini=[],fim=[];r.un.forEach((u,i)=>{if(ex[i])return;if(Math.floor(u.ini+1e-9)===hi)ini.push(i);if(Math.ceil(u.fim-1e-9)-1===hi)fim.push(String(i));});
+      if(ini.length)sec.ini.push({o,r,ch:ini});if(fim.length)sec.fim.push({o,r,ch:fim});});
+    pagamentos(o,sem).forEach(g=>sec.pag.push({o,g}));
+    comprasObra(o,c).filter(x=>!x.comprado&&!x.iniciado&&x.data<=sem).forEach(x=>sec.mat.push(x));});
+  const tag=o=>obras.length>1?" · "+o.nome:"";
+  const card=(tit,itens,hint)=>{if(!itens.length)return;nTot+=itens.length;const cd=el("div",{class:"card"},el("h2",null,tit+" ",el("span",{class:"tag2 n"},String(itens.length))));if(hint)cd.append(el("p",{class:"hint"},hint));itens.forEach(x=>cd.append(x));a.append(cd);};
+  card("❓ Confirmar andamento",sec.conf.map(({o,v})=>{const r=v.r,un=r.tp!=="global";
+    return linhaHoje(o,r,[r.s.nome,(un?v.chaves.length+" "+((o.prefixo||"un").toLowerCase())+(v.chaves.length>1?"s":"")+" · ":"")+"previsto até "+fd(r.cal.fim(v.fim))+tag(o)],[el("button",{class:"sm pri",onclick:()=>confirmarAtraso(o,v)},"Terminou?")]);}),
+    "Serviços que já deveriam ter terminado. Responda e o cronograma é ajustado só depois da sua confirmação.");
+  card("🏁 Terminam hoje",sec.fim.map(({o,r,ch})=>linhaHoje(o,r,[r.s.nome,(r.tp==="global"?"obra toda":ch.map(k=>nomeUn(o,+k)).join(", "))+tag(o)],
+    [el("button",{class:"sm",style:"background:var(--ok);border-color:var(--ok);color:#fff",onclick:()=>{o.exec[r.s.id]=o.exec[r.s.id]||{};ch.forEach(k=>o.exec[r.s.id][k]=hojeISO());salvar(o);render();toast("Concluído");avisarLiberacao(o,r.s.id);}},"✓ Concluído")])));
+  card("🛒 Comprar materiais",sec.mat.sort((x,y)=>x.data<y.data?-1:1).map(x=>{const o=x.o,late=x.data<hoje;
+    return el("div",{class:"proj"},el("i",{class:"dot",style:"background:"+x.r.cor}),el("div",{class:"inf",style:"cursor:pointer",onclick:()=>abrirObra(o,"mat")},
+      el("b",null,(x.gen?"📦 ":"")+x.r.s.nome),el("small",null,(late?"⚠️ era para comprar até ":x.data===hoje?"comprar hoje · ":"comprar até ")+(x.data===hoje?"":fdI(x.data)+" · ")+"início "+fdI(x.ini)+tag(o)),
+      el("small",null,listaItens(x))),el("button",{class:"sm",style:"background:var(--ok);border-color:var(--ok);color:#fff",onclick:()=>marcarComprado(o,x.sid)},x.gen?"✓ Resolvido":"✓ Comprado"));}),
+    "Compras dos próximos 7 dias, pela antecedência de cada material.");
+  card("▶️ Começam hoje",sec.ini.map(({o,r,ch})=>linhaHoje(o,r,[r.s.nome,(r.tp==="global"?"obra toda":ch.map(i=>nomeUn(o,i)).join(", "))+tag(o)])));
+  card("🚦 Aguardando liberação",sec.lib.map(({o,r})=>linhaHoje(o,r,[r.s.nome,"previsto desde "+fd(r.cal.data(r.inicio))+tag(o)],[el("button",{class:"sm pri",onclick:()=>liberar(o,r.s)},"Liberar")])));
+  card("🔒 Parados",sec.trav.map(({o,r})=>{const p=pausaAberta(r.s);return linhaHoje(o,r,[r.s.nome,"desde "+fdI(p.de)+(p.motivo?" · "+p.motivo:"")+tag(o)],[el("button",{class:"sm",onclick:()=>destravar(o,r)},"Retomar")]);}));
+  card("💰 Pagamentos (até 7 dias)",sec.pag.sort((x,y)=>x.g.venc<y.g.venc?-1:1).map(({o,g})=>{const late=g.venc<hoje;
+    return linhaHoje(o,null,[g.desc||"Pagamento",(late?"⚠️ venceu em ":g.venc===hoje?"vence hoje · ":"vence em ")+(g.venc===hoje?"":fdI(g.venc)+" · ")+brl(r2((+g.valor||0)-(+g.pago||0)))+tag(o)],[el("button",{class:"sm",onclick:()=>registrarPag(o,g)},"Pagar")]);}));
+  if(!nTot)a.append(el("div",{class:"card",style:"text-align:center"},el("b",null,"Tudo em dia"),el("p",{class:"hint",style:"margin:4px 0 0"},"Nada para confirmar, liberar ou pagar hoje.")));
+}
+function telaPainel(a){
+  if(!obras.length){a.append(el("p",{class:"st"},"Nenhuma obra cadastrada."));return;}
+  const hoje=hojeISO(),mes=addDiaN(hoje,30);let tot={atr:0,pag:0,conf:0};const cards=[];
+  [...obras].sort((x,y)=>(y.criado||0)-(x.criado||0)).forEach(o=>{let c;try{c=calcular(o);}catch(e){return;}
+    if(!c.ordem.length){cards.push(el("div",{class:"card obra",onclick:()=>abrirObra(o,"serv")},el("div",null,el("b",null,o.nome),el("br"),el("small",null,"Sem serviços cadastrados"))));return;}
+    const and=andamento(o,c),hi=c.cal.idx(hoje),atr=c.ordem.filter(r=>and.por[r.s.id].atraso>0),conf=vencidos(o,c,hi).length,trav=c.ordem.filter(r=>r.libSt==="travada").length;
+    const pg=pagamentos(o,mes),vp=pg.reduce((x,g)=>x+(+g.valor||0)-(+g.pago||0),0),prox=pg.sort((x,y)=>x.venc<y.venc?-1:1)[0];
+    const dif=and.fis-and.plan,fimC=o.fimContrato?c.cal.idx(o.fimContrato):null,estoura=fimC!==null&&c.fim>fimC+0.01;
+    tot.atr+=atr.length;tot.pag+=vp;tot.conf+=conf;
+    const st=dif<-0.05||estoura?["Atrasada","no"]:dif<-0.005?["Atenção","wa"]:["Em dia","ok"];
+    const prog=el("div",{class:"prog",style:"margin:10px 0 4px"});prog.append(el("i",{style:"width:"+(and.fis*100)+"%"}),el("b",{style:"left:"+(and.plan*100)+"%"}));
+    cards.push(el("div",{class:"card pn",onclick:()=>abrirObra(o)},
+      el("div",{style:"display:flex;gap:8px;align-items:flex-start"},el("div",{style:"flex:1;min-width:0"},el("b",{style:"font-size:1.05rem"},o.nome),el("br"),el("small",{style:"color:var(--mut)"},(o.status||"Em planejamento")+(o.cliente?" · "+o.cliente:""))),
+        el("span",{class:"tag2 "+(st[1]==="wa"?"":st[1]),style:st[1]==="wa"?"background:color-mix(in srgb,var(--wa) 20%,transparent);color:var(--wa)":""},st[0])),
+      prog,el("small",{style:"color:var(--mut)"},`${n1(and.fis*100)}% executado · previsto ${n1(and.plan*100)}% (${dif>=0?"+":""}${n1(dif*100)} p.p.)`),
+      el("div",{class:"kpi",style:"margin-top:10px"},
+        el("div",null,el("small",null,"Término previsto"),el("b",{style:estoura?"color:var(--no)":""},fd(c.cal.fim(c.fim)))),
+        el("div",null,el("small",null,"Serviços atrasados"),el("b",{style:atr.length?"color:var(--no)":""},String(atr.length)+(trav?" · "+trav+" 🔒":""))),
+        el("div",null,el("small",null,"A pagar (30 dias)"),el("b",null,vp?brl(r2(vp)):"—"))),
+      prox?el("small",{style:"display:block;margin-top:8px;color:var(--mut)"},"Próximo pagamento: "+(prox.desc||"—")+" · "+fdI(prox.venc)+" · "+brl(r2((+prox.valor||0)-(+prox.pago||0)))):null,
+      conf?el("button",{class:"sm pri",style:"margin-top:10px",onclick:e=>{e.stopPropagation();inicioAba="hoje";render();}},`❓ ${conf} confirmaç${conf>1?"ões":"ão"} de andamento`):null));});
+  a.append(el("div",{class:"card"},el("div",{class:"kpi"},el("div",null,el("small",null,"Obras"),el("b",null,String(obras.length))),
+    el("div",null,el("small",null,"Serviços atrasados"),el("b",{style:tot.atr?"color:var(--no)":""},String(tot.atr))),
+    el("div",null,el("small",null,"A pagar em 30 dias"),el("b",null,tot.pag?brl(r2(tot.pag)):"—")))));
+  cards.forEach(x=>a.append(x));
+}
 function render(){
   const a=$("app");a.innerHTML="";
   if(!atual||!obraAtual()){atual=null;return telaObras(a);}
   telaObra(a,obraAtual());
 }
 
+let inicioAba="hoje";
 function telaObras(a){
-  a.append(el("div",{style:"display:flex;align-items:center;gap:8px"},el("h1",{style:"flex:1"},"🏗️ Planejamento de Obras"),
-    el("button",{class:"sm",onclick:importarObra},"Importar"),el("button",{class:"sm",onclick:sair},"Sair")));
+  a.append(el("div",{style:"display:flex;align-items:center;gap:8px"},el("h1",{style:"flex:1"},"🏗️ Planejamento de Obras"),el("button",{class:"sm",onclick:sair},"Sair")));
+  const tb=el("div",{class:"tabs"});
+  [["hoje","📌","Hoje"],["painel","📊","Painel"],["lista","🏗️","Obras"]].forEach(([k,ic,t])=>tb.append(el("button",{class:inicioAba===k?"on":"",onclick:()=>{inicioAba=k;render();window.scrollTo(0,0);}},el("i",null,ic),t)));
+  a.append(tb);
+  if(inicioAba==="hoje")return telaHoje(a);
+  if(inicioAba==="painel")return telaPainel(a);
+  a.append(el("div",{style:"display:flex;align-items:center;gap:8px;margin-bottom:8px"},el("h2",{style:"flex:1;margin:0"},"Obras"),
+    el("button",{class:"sm",onclick:importarObra},"Importar")));
   a.append(el("button",{class:"pri",style:"width:100%;margin-bottom:12px",onclick:novaObra},"+ Nova obra"));
   if(!obras.length)a.append(el("p",{class:"st"},"Nenhuma obra cadastrada."));
   [...obras].sort((x,y)=>(y.criado||0)-(x.criado||0)).forEach(o=>{
@@ -328,10 +566,10 @@ async function novaObra(){
 function telaObra(a,o){
   a.append(el("div",{class:"top"},el("button",{onclick:()=>{atual=null;render();}},"‹"),el("h1",null,o.nome)));
   const tabs=el("div",{class:"tabs"});
-  [["geral","📊","Visão geral"],["dados","📋","Dados"],["proj","📐","Projetos"],["serv","🧱","Serviços"],["crono","📅","Cronograma"],["exec","✅","Execução"],["custos","💰","Custos"],["rel","📄","Relatórios"]]
+  [["geral","📊","Visão geral"],["dados","📋","Dados"],["proj","📐","Projetos"],["serv","🧱","Serviços"],["crono","📅","Cronograma"],["exec","✅","Execução"],["mat","🧱","Materiais"],["custos","💰","Custos"],["rel","📄","Relatórios"]]
     .forEach(([k,ic,t])=>tabs.append(el("button",{class:aba===k?"on":"",onclick:()=>{aba=k;render();window.scrollTo(0,0);}},el("i",null,ic),t)));
   a.append(tabs);
-  ({geral:telaGeral,dados:telaDados,proj:telaProj,serv:telaServ,crono:telaCrono,exec:telaExec,rel:telaRel,custos:telaCustos}[aba]||telaGeral)(a,o);
+  ({geral:telaGeral,dados:telaDados,proj:telaProj,serv:telaServ,crono:telaCrono,exec:telaExec,rel:telaRel,custos:telaCustos,mat:telaMat}[aba]||telaGeral)(a,o);
 }
 
 function campo(lbl,inp){return el("div",null,el("label",null,lbl),inp);}
@@ -454,7 +692,7 @@ function marcar(o,sid,chave,nome){o.exec[sid]=o.exec[sid]||{};const ex=o.exec[si
     modal(nome,el("div",{style:"display:grid;gap:10px"},el("p",{class:"hint",style:"margin:0"},"Concluído em "+fdI(ex[chave])+"."),campo("Alterar data de conclusão",dt)),
       [["Salvar nova data","pri",()=>{if(!dt.value)return false;o.exec[sid][chave]=dt.value;salvar(o);render();toast("Data alterada");}],
        ["Desmarcar","dan",()=>{delete o.exec[sid][chave];salvar(o);render();toast("Desmarcado");}],["Cancelar"]]);}
-  else{ex[chave]=dataReg||hojeISO();salvar(o);render();}}
+  else{ex[chave]=dataReg||hojeISO();salvar(o);render();avisarLiberacao(o,sid);}}
 function telaExec(a,o){
   const c=calcular(o),and=andamento(o,c),P=(o.prefixo||"Un.").trim(),cal=c.cal,hi=cal.idx(hojeISO());
   a.append(el("div",{class:"card"},el("h2",null,"Avanço físico"),
@@ -963,7 +1201,7 @@ function telaServ(a,o){
         const r=await ask(`Excluir a etapa "${et.nome}"?`+(subs.length?` Ela tem ${subs.length} subetapa(s).`:""),[...(subs.length&&o.etapas.length>1?[["Excluir e mover subetapas para a etapa anterior/seguinte","mover","dan"]]:[]),["Excluir etapa e subetapas","tudo","dan"],["Cancelar",null]]);
         if(!r)return;const idx=o.etapas.indexOf(et);o.etapas.splice(idx,1);
         if(r==="mover"&&o.etapas.length){const alvo=o.etapas[Math.max(0,idx-1)];subs.forEach(s=>s.etapa=alvo.id);}
-        else{const rm=new Set(subs.map(s=>s.id));o.servicos=o.servicos.filter(s=>!rm.has(s.id));o.servicos.forEach(s=>{if(rm.has(s.dep))s.dep="";});}
+        else{const rm=new Set(subs.map(s=>s.id));o.servicos=o.servicos.filter(s=>!rm.has(s.id));o.materiais=(o.materiais||[]).filter(m=>o.servicos.some(x=>x.id===m.sid));o.servicos.forEach(s=>{if(rm.has(s.dep))s.dep="";});}
         if(!o.etapas.length)o.etapas.push({id:uid(),nome:"Nova etapa"});salvar(o);render();}},"✕"));
     a.append(head);
     if(fechada)return;
@@ -977,7 +1215,7 @@ function telaServ(a,o){
       card.append(el("div",{class:"svh"},el("button",{type:"button",title:"Escolher cor",style:`min-height:30px;width:30px;padding:0;border-radius:8px;background:${cor};border-color:${cor};flex:0 0 auto`,onclick:()=>escolherCor(o,s)}),nome,
         el("button",{title:"Subir",onclick:()=>mv(-1)},"↑"),el("button",{title:"Descer",onclick:()=>mv(1)},"↓"),
         el("button",{title:"Excluir",onclick:async()=>{if(!await ask(`Excluir "${s.nome}"?`,[["Excluir",true,"dan"],["Cancelar",false]]))return;
-          const dep=s.dep;o.servicos.splice(o.servicos.indexOf(s),1);o.servicos.forEach(x=>{if(x.dep===s.id)x.dep=dep;});delete o.exec[s.id];salvar(o);render();}},"✕")));
+          const dep=s.dep;o.servicos.splice(o.servicos.indexOf(s),1);o.servicos.forEach(x=>{if(x.dep===s.id)x.dep=dep;});delete o.exec[s.id];o.materiais=(o.materiais||[]).filter(m=>m.sid!==s.id);if(o.compras)delete o.compras[s.id];salvar(o);render();}},"✕")));
       const numInp=(k,step,min)=>{const x=el("input",{type:"number",step,min,value:s[k]??"",inputmode:"decimal"});if(k==="dur"&&!(+s[k]>0)&&tipoDe(s)!=="periodos"){x.style.borderColor="var(--wa)";x.style.borderWidth="2px";x.placeholder="preencher";}x.onchange=()=>{s[k]=Math.max(min,num(x.value));x.value=s[k];salvar(o);};return x;};
       const es=el("select");o.etapas.forEach(e=>es.append(el("option",{value:e.id},e.nome)));es.value=s.etapa;
       es.onchange=()=>{s.etapa=es.value;o.servicos.splice(o.servicos.indexOf(s),1);o.servicos.push(s);salvar(o);render();};
@@ -1300,10 +1538,11 @@ auth.onAuthStateChanged(u=>{
   if(unsub){unsub();unsub=null;}
   $("login").style.display=u?"none":"flex";db=null;obras=[];render();
   if(!u){$("st").textContent="";return;}
-  db=fs;$("st").textContent="Conectando…";
+  db=fs;$("st").textContent="Conectando…";ouvirAgenda();
   unsub=fs.collection("obras").onSnapshot(sn=>{
     const novas=sn.docs.map(d=>normalizar(JSON.parse(JSON.stringify({...d.data(),id:d.id}))));
     if(ocupado()){const loc=obraAtual();obras=novas.map(x=>loc&&x.id===loc.id?loc:x);if(loc&&!obras.includes(loc))obras.push(loc);}else obras=novas;
+    obras.forEach(syncAgenda);
     $("st").textContent="✓ Sincronizado · "+u.email+(sn.metadata&&sn.metadata.fromCache?" (offline)":"");
     const foco=document.activeElement&&["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName);
     if(!foco)render();
