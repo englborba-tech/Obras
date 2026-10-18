@@ -307,7 +307,7 @@ const antecDe=m=>m.antec===""||m.antec==null?ANTEC_PADRAO:Math.max(0,+m.antec||0
 // uma compra por subetapa: data = início − maior antecedência entre os materiais dela
 function comprasObra(o,c){c=c||calcular(o);const out=[];
   c.ordem.forEach(r=>{const ms=(o.materiais||[]).filter(m=>m.sid===r.s.id),gen=!ms.length;
-    const ex=o.exec[r.s.id]||{},iniciado=Object.keys(ex).length>0;
+    const ex=o.exec[r.s.id]||{},iniciado=Object.keys(ex).length>0||(gen&&r.cal.iso(r.cal.data(r.inicio))<=hojeISO());
     const ini=r.cal.iso(r.cal.data(r.inicio)),ant=gen?ANTEC_PADRAO:Math.max(...ms.map(antecDe));
     out.push({o,r,sid:r.s.id,ms,gen,ini,data:addDiaN(ini,-ant),ant,iniciado,comprado:o.compras[r.s.id]||null,
       itens:ms.map(m=>({nome:m.nome,qtd:r2(matQtd(m,r.s,c.N)),un:m.un||"un"})),total:ms.reduce((a,m)=>a+matTotal(m,r.s,c.N),0)});});
@@ -549,7 +549,7 @@ function telaObras(a){
 
 async function excluirObra(o){
   if(!await ask(`Excluir a obra "${o.nome}"? Todo o planejamento, execução e projetos cadastrados serão apagados. Isso não pode ser desfeito.`,[["Excluir definitivamente",true,"dan"],["Cancelar",false]]))return;
-  try{await db.collection("obras").doc(o.id).delete();obras=obras.filter(x=>x.id!==o.id);if(atual===o.id)atual=null;render();toast("Obra excluída");}catch(e){toast("Erro ao excluir");}
+  try{await db.collection("obras").doc(o.id).delete();Object.entries(agendaCache).forEach(([id,d])=>{if(d.origem&&d.origem.app==="obras"&&d.origem.obra===o.id)db.collection("agenda").doc(id).delete().catch(()=>{});});obras=obras.filter(x=>x.id!==o.id);if(atual===o.id)atual=null;render();toast("Obra excluída");}catch(e){toast("Erro ao excluir");}
 }
 async function novaObra(){
   if(!db)return toast("Ainda conectando…");
