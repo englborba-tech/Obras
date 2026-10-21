@@ -192,7 +192,7 @@ function normalizar(o){
   const ids=new Set(o.etapas.map(e=>e.id));
   (o.servicos=o.servicos||[]).forEach(s=>{if(!ids.has(s.etapa))s.etapa=o.etapas[0].id;if(s.pessoas==null)s.pessoas=0;if(!s.periodos)s.periodos=[];if(!s.tipo)s.tipo="unit";});
   o.servicos.forEach(s=>{if(!s.trav)s.trav=[];if(s.lib&&s.lib.st==="travada"){s.trav.push({de:s.lib.data,ate:null,motivo:s.lib.motivo||""});s.lib=s.lib.ant||{st:"liberada",data:s.lib.data};}});
-  o.exec=o.exec||{};o.prev=o.prev||{};o.materiais=o.materiais||[];o.compras=o.compras||{};o.projetos=o.projetos||[];o.gastos=o.gastos||[];
+  o.exec=o.exec||{};o.prev=o.prev||{};o.pausasObra=o.pausasObra||[];o.materiais=o.materiais||[];o.compras=o.compras||{};o.projetos=o.projetos||[];o.gastos=o.gastos||[];
   o.gastos.forEach(g=>{if(!Array.isArray(g.pags))g.pags=(+g.pago>0)?[{id:uid(),data:g.venc||"",valor:+g.pago,obs:""}]:[];g.pago=Math.round(g.pags.reduce((a,p)=>a+(+p.valor||0),0)*100)/100;});
   return o;}
 function ordenar(o){normalizar(o);const ord={};o.etapas.forEach((e,i)=>ord[e.id]=i);
@@ -203,7 +203,8 @@ let fechadas=new Set();
 // ---------- Calendário (dias úteis) ----------
 function Cal(o){
   const ini=new Date(o.inicio+"T12:00"),fer=new Set(o.feriados||[]),dias=[];
-  const util=d=>{const w=d.getDay();if(w===0)return false;if(w===6&&!o.sabado)return false;return !fer.has(iso(d));};
+  const PZ=(o.pausasObra||[]).filter(p=>p.de).map(p=>[p.de,p.ate?addDiaN(p.ate,-1):hojeISO()]);
+  const util=d=>{const w=d.getDay();if(w===0)return false;if(w===6&&!o.sabado)return false;const k=iso(d);if(fer.has(k))return false;for(const [a,b] of PZ)if(k>=a&&k<=b)return false;return true;};
   function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
   const cur=new Date(ini);
   function ext(n){while(dias.length<=n){if(util(cur))dias.push(new Date(cur));cur.setDate(cur.getDate()+1);}}
@@ -466,7 +467,9 @@ function telaHoje(a){
   a.append(el("div",{class:"card hojeh"},el("small",null,d.toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})),el("h2",{style:"margin:2px 0 0"},(d.getHours()<12?"Bom dia":d.getHours()<18?"Boa tarde":"Boa noite")+", Lucas")));
   if(!obras.length){a.append(el("p",{class:"st"},"Nenhuma obra cadastrada."));return;}
   const sec={conf:[],ini:[],fim:[],lib:[],trav:[],pag:[],mat:[]};let nTot=0;
-  obras.forEach(o=>{let c;try{c=calcular(o);}catch(e){return;}if(!c.ordem.length)return;const cal=c.cal,hi=cal.idx(hoje),hojeUtil=cal.iso(cal.data(hi))===hoje;
+  const pausadas=[];
+  obras.forEach(o=>{if(pausaObra(o)){pausadas.push(o);pagamentos(o,sem).forEach(g=>sec.pag.push({o,g}));return;}
+    let c;try{c=calcular(o);}catch(e){return;}if(!c.ordem.length)return;const cal=c.cal,hi=cal.idx(hoje),hojeUtil=cal.iso(cal.data(hi))===hoje;
     vencidos(o,c,hi).forEach(v=>sec.conf.push({o,v}));
     c.ordem.forEach(r=>{if(r.libSt==="travada"){sec.trav.push({o,r});return;}const ex=o.exec[r.s.id]||{};
       if(r.libSt==="pendente"&&r.inicio<=hi){sec.lib.push({o,r});return;}
@@ -493,6 +496,9 @@ function telaHoje(a){
   card("🔒 Parados",sec.trav.map(({o,r})=>{const p=pausaAberta(r.s);return linhaHoje(o,r,[r.s.nome,"desde "+fdI(p.de)+(p.motivo?" · "+p.motivo:"")+tag(o)],[el("button",{class:"sm",onclick:()=>destravar(o,r)},"Retomar")]);}));
   card("💰 Pagamentos (até 7 dias)",sec.pag.sort((x,y)=>x.g.venc<y.g.venc?-1:1).map(({o,g})=>{const late=g.venc<hoje;
     return linhaHoje(o,null,[g.desc||"Pagamento",(late?"⚠️ venceu em ":g.venc===hoje?"vence hoje · ":"vence em ")+(g.venc===hoje?"":fdI(g.venc)+" · ")+brl(r2((+g.valor||0)-(+g.pago||0)))+tag(o)],[el("button",{class:"sm",onclick:()=>registrarPag(o,g)},"Pagar")]);}));
+  if(pausadas.length){const cd=el("div",{class:"card"},el("h2",null,"⏸ Obras paralisadas"));
+    pausadas.forEach(o=>{const p=pausaObra(o);cd.append(el("div",{class:"proj"},el("div",{class:"inf",style:"cursor:pointer",onclick:()=>abrirObra(o)},el("b",null,o.nome),el("small",null,"desde "+fdI(p.de)+" · "+p.motivo)),
+      el("button",{class:"sm",onclick:()=>retomarObra(o)},"▶ Retomar")));});a.append(cd);nTot+=pausadas.length;}
   if(!nTot)a.append(el("div",{class:"card",style:"text-align:center"},el("b",null,"Tudo em dia"),el("p",{class:"hint",style:"margin:4px 0 0"},"Nada para confirmar, liberar ou pagar hoje.")));
 }
 function telaPainel(a){
@@ -504,7 +510,7 @@ function telaPainel(a){
     const pg=pagamentos(o,mes),vp=pg.reduce((x,g)=>x+(+g.valor||0)-(+g.pago||0),0),prox=pg.sort((x,y)=>x.venc<y.venc?-1:1)[0];
     const dif=and.fis-and.plan,fimC=o.fimContrato?c.cal.idx(o.fimContrato):null,estoura=fimC!==null&&c.fim>fimC+0.01;
     tot.atr+=atr.length;tot.pag+=vp;tot.conf+=conf;
-    const st=dif<-0.05||estoura?["Atrasada","no"]:dif<-0.005?["Atenção","wa"]:["Em dia","ok"];
+    const st=pausaObra(o)?["⏸ Paralisada","n"]:dif<-0.05||estoura?["Atrasada","no"]:dif<-0.005?["Atenção","wa"]:["Em dia","ok"];
     const prog=el("div",{class:"prog",style:"margin:10px 0 4px"});prog.append(el("i",{style:"width:"+(and.fis*100)+"%"}),el("b",{style:"left:"+(and.plan*100)+"%"}));
     cards.push(el("div",{class:"card pn",onclick:()=>abrirObra(o)},
       el("div",{style:"display:flex;gap:8px;align-items:flex-start"},el("div",{style:"flex:1;min-width:0"},el("b",{style:"font-size:1.05rem"},o.nome),el("br"),el("small",{style:"color:var(--mut)"},(o.status||"Em planejamento")+(o.cliente?" · "+o.cliente:""))),
@@ -515,7 +521,8 @@ function telaPainel(a){
         el("div",null,el("small",null,"Serviços atrasados"),el("b",{style:atr.length?"color:var(--no)":""},String(atr.length)+(trav?" · "+trav+" 🔒":""))),
         el("div",null,el("small",null,"A pagar (30 dias)"),el("b",null,vp?brl(r2(vp)):"—"))),
       prox?el("small",{style:"display:block;margin-top:8px;color:var(--mut)"},"Próximo pagamento: "+(prox.desc||"—")+" · "+fdI(prox.venc)+" · "+brl(r2((+prox.valor||0)-(+prox.pago||0)))):null,
-      conf?el("button",{class:"sm pri",style:"margin-top:10px",onclick:e=>{e.stopPropagation();inicioAba="hoje";render();}},`❓ ${conf} confirmaç${conf>1?"ões":"ão"} de andamento`):null));});
+      pausaObra(o)?el("small",{style:"display:block;margin-top:8px;color:var(--no)"},"Paralisada desde "+fdI(pausaObra(o).de)+" · "+pausaObra(o).motivo):null,
+      conf&&!pausaObra(o)?el("button",{class:"sm pri",style:"margin-top:10px",onclick:e=>{e.stopPropagation();inicioAba="hoje";render();}},`❓ ${conf} confirmaç${conf>1?"ões":"ão"} de andamento`):null));});
   a.append(el("div",{class:"card"},el("div",{class:"kpi"},el("div",null,el("small",null,"Obras"),el("b",null,String(obras.length))),
     el("div",null,el("small",null,"Serviços atrasados"),el("b",{style:tot.atr?"color:var(--no)":""},String(tot.atr))),
     el("div",null,el("small",null,"A pagar em 30 dias"),el("b",null,tot.pag?brl(r2(tot.pag)):"—")))));
@@ -563,12 +570,31 @@ async function novaObra(){
   if(!obras.some(x=>x.id===ref.id))obras.push(normalizar({id:ref.id,...JSON.parse(JSON.stringify(o))}));render();
 }
 
+// ---------- Paralisação da obra inteira ----------
+const pausaObra=o=>(o.pausasObra||[]).find(p=>!p.ate)||null;
+function diasUteisCorridos(o,a,b){let n=0,d=new Date(a+"T12:00");const f=new Date(b+"T12:00"),fer=new Set(o.feriados||[]);
+  while(d<=f){const w=d.getDay(),k=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");if(w!==0&&(w!==6||o.sabado)&&!fer.has(k))n++;d.setDate(d.getDate()+1);}return n;}
+function paralisarObra(o){const dt=el("input",{type:"date",value:hojeISO()}),mt=el("input",{placeholder:"Ex.: aguardando recursos do cliente"});
+  modal("⏸ Paralisar a obra inteira",el("div",{style:"display:grid;gap:10px"},
+    el("p",{class:"hint",style:"margin:0"},"Todos os serviços param. Enquanto a obra estiver paralisada, os dias não contam no cronograma: o que falta é empurrado para frente e volta a contar a partir da retomada. Pagamentos em aberto continuam aparecendo."),
+    campo("Paralisada a partir de",dt),campo("Motivo",mt)),
+    [["⏸ Paralisar","dan",()=>{if(!mt.value.trim()){toast("Informe o motivo");return false;}o.pausasObra=o.pausasObra||[];o.pausasObra.push({de:dt.value||hojeISO(),ate:null,motivo:mt.value.trim()});
+      if(o.status!=="Paralisada")o.statusAnt=o.status||"Em andamento";o.status="Paralisada";salvar(o);render();toast("Obra paralisada");}],["Cancelar"]]);}
+function retomarObra(o){const p=pausaObra(o);if(!p)return;const dt=el("input",{type:"date",value:hojeISO()});
+  modal("▶ Retomar a obra",el("div",{style:"display:grid;gap:10px"},el("p",{class:"hint",style:"margin:0"},"Paralisada desde "+fdI(p.de)+" · "+p.motivo+". O cronograma volta a contar a partir da data de retomada."),campo("Retomada em",dt)),
+    [["▶ Retomar","pri",()=>{if(dt.value&&dt.value<p.de){toast("A retomada não pode ser antes da paralisação");return false;}p.ate=dt.value||hojeISO();
+      o.status=o.statusAnt&&o.statusAnt!=="Paralisada"?o.statusAnt:"Em andamento";delete o.statusAnt;salvar(o);render();toast("Obra retomada");}],["Cancelar"]]);}
+function avisoPausa(o){const p=pausaObra(o);if(!p)return null;const n=diasUteisCorridos(o,p.de,hojeISO());
+  return el("div",{class:"alert",style:"border-color:var(--no);background:color-mix(in srgb,var(--no) 10%,transparent);display:flex;gap:10px;align-items:center;flex-wrap:wrap"},
+    el("div",{style:"flex:1;min-width:200px"},el("b",null,"⏸ Obra paralisada desde "+fdI(p.de)),el("br"),el("small",null,p.motivo+" · "+n+" dia"+(n===1?"":"s")+" út"+(n===1?"il":"eis")+" parada · o cronograma está sendo empurrado")),
+    el("button",{class:"sm pri",onclick:()=>retomarObra(o)},"▶ Retomar obra"));}
 function telaObra(a,o){
   a.append(el("div",{class:"top"},el("button",{onclick:()=>{atual=null;render();}},"‹"),el("h1",null,o.nome)));
   const tabs=el("div",{class:"tabs"});
   [["geral","📊","Visão geral"],["dados","📋","Dados"],["proj","📐","Projetos"],["serv","🧱","Serviços"],["crono","📅","Cronograma"],["exec","✅","Execução"],["mat","🧱","Materiais"],["custos","💰","Custos"],["rel","📄","Relatórios"]]
     .forEach(([k,ic,t])=>tabs.append(el("button",{class:aba===k?"on":"",onclick:()=>{aba=k;render();window.scrollTo(0,0);}},el("i",null,ic),t)));
   a.append(tabs);
+  {const av=avisoPausa(o);if(av)a.append(av);}
   ({geral:telaGeral,dados:telaDados,proj:telaProj,serv:telaServ,crono:telaCrono,exec:telaExec,rel:telaRel,custos:telaCustos,mat:telaMat}[aba]||telaGeral)(a,o);
 }
 
@@ -790,7 +816,9 @@ function dadosRelatorio(o,de,ate){
       const f=r.tp==="unit"?Object.entries(ex).filter(([k,d])=>/^\d+$/.test(k)&&d<=ate).length:r.tp==="global"?(ex.g&&ex.g<=ate?1:0):r.per.filter((p,i)=>ex["p"+i]&&ex["p"+i]<=ate).length;
       const w=Math.max(0.1,r.diasTrab);pt+=w;pf+=w*f/n;});
     return{id:et.id,nome:et.nome,ini:Math.min(...rs.map(r=>r.inicio)),fim:Math.max(...rs.map(r=>r.fim)),pct:pt?pf/pt:0};}).filter(Boolean);
-  const paral=[];c.ordem.forEach(r=>(r.s.trav||[]).forEach(p=>{if(!p.de)return;const a1=p.de>de?p.de:de,fimP=p.ate?addDiaN(p.ate,-1):ate,b1=fimP<ate?fimP:ate;
+  const paral=[];(o.pausasObra||[]).forEach(p=>{if(!p.de)return;const a1=p.de>de?p.de:de,fimP=p.ate?addDiaN(p.ate,-1):ate,b1=fimP<ate?fimP:ate;if(a1>b1)return;
+    paral.push({et:"Obra inteira",nome:"Obra paralisada",de:p.de,ate:p.ate,dias:diasUteisCorridos(o,a1,b1),motivo:p.motivo||"—"});});
+  c.ordem.forEach(r=>(r.s.trav||[]).forEach(p=>{if(!p.de)return;const a1=p.de>de?p.de:de,fimP=p.ate?addDiaN(p.ate,-1):ate,b1=fimP<ate?fimP:ate;
     if(a1>b1)return;paral.push({et:nomeEtapa(o,r.s.etapa),nome:r.s.nome,de:p.de,ate:p.ate,dias:Math.max(0,cal.idx(addDia(b1))-cal.idx(a1)),motivo:p.motivo||"—"});}));
   const base=o.base?{fim:o.base.fim,data:o.base.data,desvio:Math.ceil(c.fim-1e-9)-cal.idx(addDia(o.base.fim))}:null;
   return{c,cal,P,de,ate,iFim,paral,base,fis:pF/pesoT,plan:pP/pesoT,fisPer:(pF-pFi)/pesoT,planPer:(pP-pPi)/pesoT,exec,atrasos,prox,
@@ -802,6 +830,8 @@ function periodoPadrao(tipo){const h=new Date();
 let relCfg=null;
 function telaRel(a,o){
   o.relatorios=o.relatorios||[];
+  a.append(el("div",{class:"card"},el("h2",null,"📋 Fechamento de etapa"),el("p",{class:"hint"},"Resumo de uma ou mais subetapas concluídas: orçado × realizado com o motivo da diferença, pagamentos feitos e o que falta pagar, com o Pix de cada favorecido. Gera a mensagem para o cliente e um PDF."),
+    el("button",{class:"pri",style:"width:100%",onclick:()=>fechamento(o)},"Fazer fechamento")));
   cardCampo(a,o);
   if(!relCfg||relCfg.obra!==o.id){const [de,ate]=periodoPadrao("semanal");relCfg={obra:o.id,tipo:"semanal",de,ate};}
   const f=el("div",{class:"card"},el("h2",null,"Relatório de acompanhamento"));
@@ -815,6 +845,23 @@ function telaRel(a,o){
   f.append(el("div",{style:"display:grid;gap:10px"},el("div",{class:"g3"},campo("Tipo",tp),campo("De",de),campo("Até",ate)),
     campo("Relatório nº",nr),campo("Observações do período",obs)));
   a.append(f);
+  // pagamentos e fechamento no relatório
+  if(!relCfg.fech)relCfg.fech=new Set();if(relCfg.pag==null)relCfg.pag=false;
+  {const cf=calcular(o),cd=el("div",{class:"card"},el("h2",null,"💰 Pagamentos no relatório"),
+      el("p",{class:"hint"},"Escolha o que vai para o cliente neste PDF. Sem nada marcado, o relatório sai sem a parte de pagamentos."));
+    const pend=(o.gastos||[]).filter(g=>(+g.valor||0)-(+g.pago||0)>0.004),tot=pend.reduce((x,g)=>x+(g.valor-g.pago),0);
+    const ckP=el("input",{type:"checkbox",style:"width:20px;height:20px"});ckP.checked=relCfg.pag;ckP.onchange=()=>{relCfg.pag=ckP.checked;};
+    cd.append(el("label",{style:"display:flex;gap:10px;align-items:center;margin:0 0 10px;color:var(--tx);font-size:.95rem;cursor:pointer"},ckP,
+      el("div",null,el("b",null,"Pagamentos a realizar"),el("small",{style:"display:block;color:var(--mut)"},pend.length?pend.length+" lançamento(s) em aberto · "+brl(r2(tot))+", com favorecido e Pix":"Nenhum pagamento em aberto"))));
+    cd.append(el("div",{class:"sec",style:"margin:6px 0"},"Fechamento de etapa (orçado × realizado, pagamentos feitos e saldo)"));
+    let n=0;o.etapas.forEach(et=>cf.ordem.filter(rr=>rr.s.etapa===et.id&&(o.gastos||[]).some(g=>g.sid===rr.s.id)).forEach(rr=>{n++;
+      const ck=el("input",{type:"checkbox",style:"width:20px;height:20px"});ck.checked=relCfg.fech.has(rr.s.id);ck.onchange=()=>{ck.checked?relCfg.fech.add(rr.s.id):relCfg.fech.delete(rr.s.id);};
+      const gs=(o.gastos||[]).filter(g=>g.sid===rr.s.id),real=gs.reduce((x,g)=>x+(+g.valor||0),0),ap=gs.reduce((x,g)=>x+(+g.valor||0)-(+g.pago||0),0);
+      cd.append(el("label",{style:"display:flex;gap:10px;align-items:center;margin:0 0 8px;color:var(--tx);font-size:.95rem;cursor:pointer"},ck,
+        el("div",null,el("b",null,rr.s.nome),el("small",{style:"display:block;color:var(--mut)"},et.nome+" · orçado "+brl(r2(rr.custo))+" · realizado "+brl(r2(real))+(ap>0.004?" · a pagar "+brl(r2(ap)):" · quitado")))));}));
+    if(!n)cd.append(el("p",{class:"hint",style:"margin:0"},"Nenhuma subetapa com gastos lançados ainda (aba Custos)."));
+    else cd.append(el("p",{class:"hint",style:"margin:6px 0 0"},"O motivo das diferenças é o mesmo preenchido em Custos → Fechamento de etapa."));
+    a.append(cd);}
   if(!relCfg.de||!relCfg.ate||relCfg.ate<relCfg.de){a.append(el("p",{class:"st"},"Escolha um período válido."));return;}
   const R=dadosRelatorio(o,relCfg.de,relCfg.ate);
   // prévia
@@ -831,16 +878,16 @@ function telaRel(a,o){
   a.append(pv);
   a.append(el("button",{class:"pri",style:"width:100%",onclick:async()=>{
     const n=Math.max(1,Math.floor(+nr.value||1));
-    try{const blob=pdfRelatorio(o,R,n,o.relObs||"");
+    try{R.opc={pag:!!relCfg.pag,fech:[...(relCfg.fech||[])].filter(id=>o.servicos.some(x=>x.id===id))};const blob=pdfRelatorio(o,R,n,o.relObs||"");
       const nome=`Relatorio ${String(n).padStart(2,"0")} - ${(o.nome||"obra").replace(/[\\/:*?"<>|]/g,"")} - ${fdI(R.de).replace(/\//g,"-")} a ${fdI(R.ate).replace(/\//g,"-")}.pdf`;
       const dl=window.claude?await claude.use("downloads").catch(()=>null):null;
       if(dl){try{await dl.save({filename:nome,data:blob});}catch(e){if(e.code!=="declined")toast("Não foi possível salvar ("+e.code+")");return;}}
       else{const u=URL.createObjectURL(blob),l=document.createElement("a");l.href=u;l.download=nome;document.body.append(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),5000);}
-      o.relatorios.push({n,de:R.de,ate:R.ate,obs:o.relObs||"",emitido:hojeISO()});o.relObs="";salvar(o);render();toast("Relatório "+n+" gerado");
+      o.relatorios.push({n,de:R.de,ate:R.ate,obs:o.relObs||"",emitido:hojeISO(),pag:R.opc.pag,fech:R.opc.fech});o.relObs="";salvar(o);render();toast("Relatório "+n+" gerado");
     }catch(e){console.error(e);toast("Erro ao gerar o PDF");}}},"📄 Gerar PDF"));
   if(o.relatorios.length){const h=el("div",{class:"card",style:"margin-top:12px"},el("h2",null,"Relatórios emitidos"));
     [...o.relatorios].reverse().forEach(x=>h.append(el("div",{class:"proj"},el("div",{class:"inf"},el("b",null,"Nº "+x.n+" · "+fdI(x.de)+" a "+fdI(x.ate)),el("small",null,"emitido em "+fdI(x.emitido)+(x.obs?" · "+x.obs.slice(0,80)+(x.obs.length>80?"…":""):""))),
-      el("button",{class:"sm",onclick:()=>{relCfg={obra:o.id,tipo:"pers",de:x.de,ate:x.ate};o.relObs=x.obs||"";nr.value=x.n;salvar(o);render();toast("Período e observações carregados");}},"Reabrir"),
+      el("button",{class:"sm",onclick:()=>{relCfg={obra:o.id,tipo:"pers",de:x.de,ate:x.ate,pag:!!x.pag,fech:new Set(x.fech||[])};o.relObs=x.obs||"";nr.value=x.n;salvar(o);render();toast("Período e observações carregados");}},"Reabrir"),
       el("button",{class:"sm",title:"Excluir do histórico",onclick:async()=>{if(!await ask(`Excluir o relatório nº ${x.n} (${fdI(x.de)} a ${fdI(x.ate)}) do histórico? O PDF que você já baixou não é apagado.`,[["Excluir",true,"dan"],["Cancelar",false]]))return;
         o.relatorios=o.relatorios.filter(y=>y!==x);salvar(o);render();toast("Relatório excluído");}},"🗑"))));
     a.append(h);}
@@ -886,7 +933,7 @@ function pdfCampo(o,de,ate,fmt,umaFolha){
       let yEnd=y0+Math.min(rowsPorPag,LC.length-r0)*RHf+(r0+rowsPorPag>=LC.length?RHf:0);
       // fundos das colunas (fim de semana / feriado / hoje)
       for(let k=a;k<b;k++){const dt=E.date(k),t=tipoDia(o,dt),x=x0+(k-a)*CW;
-        if(t||k===hojeK){P.setFillColor(...(k===hojeK?[254,240,138]:t==="fer"?FER:FDS));P.rect(x,yTop,CW,yEnd-yTop,"F");}}
+        if(t||k===hojeK){P.setFillColor(...(k===hojeK?[254,240,138]:(t==="fer"||t==="par")?FER:FDS));P.rect(x,yTop,CW,yEnd-yTop,"F");}}
       // cabeçalho: mês/ano à esquerda, dia da semana e dia centralizados
       let ultM=-1;
       for(let k=a;k<b;k++){const dt=E.date(k),x=x0+(k-a)*CW,t=tipoDia(o,dt);
@@ -897,7 +944,7 @@ function pdfCampo(o,de,ate,fmt,umaFolha){
           P.setFont("helvetica","bold");P.setFontSize(7.5);const rot=P.getTextWidth(longo)<=esp?longo:P.getTextWidth(curto)<=esp?curto:null;
           if(rot)txt(rot,x+0.6,yTop-1.5,{b:1,s:7.5,c:[29,78,216]});
           P.setDrawColor(29,78,216);P.setLineWidth(0.5);P.line(x,yTop-5,x,yEnd);}
-        const cor=t==="fer"?[185,28,28]:t?[107,114,128]:[17,24,39];
+        const cor=(t==="fer"||t==="par")?[185,28,28]:t?[107,114,128]:[17,24,39];
         if(CW>=3.6){txt(SEM[dt.getDay()],x+CW/2,yTop+3.3,{s:CW>=5?6.5:5,c:cor,al:"center"});
           txt(String(dt.getDate()).padStart(2,"0"),x+CW/2,yTop+7.8,{b:1,s:CW>=5.5?7.5:5.5,c:cor,al:"center"});}
         else if(dt.getDay()===1)txt(String(dt.getDate()).padStart(2,"0"),x+0.2,yTop+7.8,{b:1,s:5});}
@@ -997,6 +1044,13 @@ function pdfRelatorio(o,R,num,obs){
         ["TOTAL",brl(RC.orc),brl(RC.valor),brl(RC.pago),brl(RC.valor-RC.pago)]],
       margin:{left:M,right:M},styles:{fontSize:8.5},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}},
       didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY;}
+  const OPC=R.opc||{pag:false,fech:[]};
+  if(OPC.pag){const pend=(o.gastos||[]).filter(g=>(+g.valor||0)-(+g.pago||0)>0.004).sort((x,z)=>(x.venc||"9").localeCompare(z.venc||"9"));
+    if(pend.length){novaPag(20);doc.autoTable({startY:y+3,head:[["Pagamentos a realizar","Subetapa","Vencimento","Favorecido / Pix","Valor"]],
+      body:[...pend.map(g=>{const sv=o.servicos.find(x=>x.id===g.sid);return[g.desc+((+g.pago||0)>0?" (saldo)":""),sv?sv.nome:"-",g.venc?fdI(g.venc):"-",[g.fav,g.pix?tipoPix(g.pix)+": "+fmtPix(g.pix):""].filter(Boolean).join("\n")||"-",brl(r2(g.valor-g.pago))];}),
+        ["TOTAL","","","",brl(r2(pend.reduce((a,g)=>a+(g.valor-g.pago),0)))]],
+      margin:{left:M,right:M},styles:{fontSize:8.5},headStyles:{fillColor:[254,243,199],textColor:esc},columnStyles:{4:{halign:"right",fontStyle:"bold"}},
+      didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY;}}
   if(R.custo>0&&!(o.gastos||[]).length){doc.autoTable({startY:y+2,head:[["Físico-financeiro","Valor"]],body:[["Custo total planejado",brl(R.custo)],["Previsto até "+fdI(R.ate),brl(R.custoPrev)],["Executado até "+fdI(R.ate),brl(R.custoExec)]],
     margin:{left:M,right:M},styles:{fontSize:9},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:{1:{halign:"right"}}});y=doc.lastAutoTable.finalY;}
   // tabelas
@@ -1053,9 +1107,9 @@ function pdfRelatorio(o,R,num,obs){
      const LW=58,nd=kb-ka,cw=Math.min(8,(CW-LW)/nd),rh=6,x0=M+LW,hd=10;novaPag(hd+rows.length*rh+14);y+=5;
      const yT=y,yB=y+hd+rows.length*rh;
      for(let k=ka;k<kb;k++){const dt=E.date(k),t=tipoDia(o,dt),x=x0+(k-ka)*cw;
-       if(t){doc.setFillColor(...(t==="fer"?[254,215,215]:[229,231,235]));doc.rect(x,yT,cw,yB-yT,"F");}
+       if(t){doc.setFillColor(...((t==="fer"||t==="par")?[254,215,215]:[229,231,235]));doc.rect(x,yT,cw,yB-yT,"F");}
        if(dt.getDate()===1||k===ka){txt(dt.toLocaleDateString("pt-BR",{month:"long"})+"/"+dt.getFullYear(),x+0.6,yT-1.2,{b:1,s:7.5,c:azul});doc.setDrawColor(29,78,216);doc.setLineWidth(0.4);doc.line(x,yT-4.5,x,yB);}
-       const cor=t==="fer"?[185,28,28]:t?cinzaC:esc;
+       const cor=(t==="fer"||t==="par")?[185,28,28]:t?cinzaC:esc;
        txt(SEM[dt.getDay()],x+cw/2,yT+3.6,{s:6.5,c:cor,al:"center"});txt(String(dt.getDate()).padStart(2,"0"),x+cw/2,yT+8,{b:1,s:7.5,c:cor,al:"center"});}
      y=yT+hd;
      rows.forEach(({r,m,par})=>{const cor=hexRgb(r.cor),lum=cor[0]*0.3+cor[1]*0.59+cor[2]*0.11;
@@ -1066,8 +1120,31 @@ function pdfRelatorio(o,R,num,obs){
          else if(par.has(k)){doc.setDrawColor(220,38,38);doc.setLineWidth(0.4);const p=1.6;doc.line(x+cw/2-p,y+rh/2-p,x+cw/2+p,y+rh/2+p);doc.line(x+cw/2+p,y+rh/2-p,x+cw/2-p,y+rh/2+p);}}
        y+=rh;});
      y+=4;txt("Número no bloco = dia trabalhado  |  X vermelho = dia parado  |  colunas cinza = fim de semana, rosa = feriado",M,y,{s:7.5,c:cinzaC});y+=3;}}
-  // 8. observações
-  titulo("8. OBSERVAÇÕES");
+  // 8. fechamento de etapa (opcional)
+  let nObs=8;
+  if(OPC.fech&&OPC.fech.length){const F=dadosFechamento(o,OPC.fech);nObs=9;
+    doc.addPage();y=M;titulo("8. FECHAMENTO DE ETAPA");
+    doc.autoTable({startY:y,head:[["Subetapa","Orçado","Realizado","Diferença","Pago","Saldo"]],
+      body:[...F.itens.map(x=>{const d=r2(x.real-x.orc);return[x.s.nome+"\n"+x.et,x.orc?brl(x.orc):"-",brl(x.real),x.orc&&x.real?(d>0?"+":"")+brl(d):"-",brl(x.pago),x.saldo>0.004?brl(x.saldo):"quitado"];}),
+        ["TOTAL",brl(r2(F.itens.reduce((a,x)=>a+x.orc,0))),brl(r2(F.itens.reduce((a,x)=>a+x.real,0))),"",brl(r2(F.itens.reduce((a,x)=>a+x.pago,0))),brl(r2(F.itens.reduce((a,x)=>a+Math.max(0,x.saldo),0)))]],
+      margin:{left:M,right:M},styles:{fontSize:9,cellPadding:1.6,valign:"middle"},headStyles:{fillColor:[229,231,235],textColor:esc},
+      columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"},5:{halign:"right"}},
+      didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY+3;
+    F.itens.filter(x=>x.motivo&&Math.abs(x.real-x.orc)>=0.5).forEach(x=>{const d=r2(x.real-x.orc);novaPag(12);
+      txt(x.s.nome+": "+(d>0?"acréscimo de ":"economia de ")+brl(Math.abs(d)),M,y+3,{b:1,s:9.5});y+=5;
+      doc.splitTextToSize(x.motivo.trim().replace(/\.?$/,"."),CW).forEach(l=>{novaPag(5);txt(l,M,y+3,{s:9.5});y+=4.6;});y+=2;});
+    F.itens.filter(x=>x.pags.length).forEach(x=>{novaPag(16);
+      doc.autoTable({startY:y+1,head:[["Pagamentos realizados · "+x.s.nome,"Data","Valor"]],
+        body:[...x.pags.map(p=>[p.desc,p.data?fdI(p.data):"-",brl(p.valor)]),["Total pago","",brl(x.pago)],["Valor do serviço: "+brl(x.real),"Saldo",x.saldo>0.004?brl(x.saldo):"quitado"]],
+        margin:{left:M,right:M},styles:{fontSize:9,cellPadding:1.5},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:{1:{cellWidth:24},2:{halign:"right",cellWidth:32}},
+        didParseCell:d=>{if(d.section==="body"&&d.row.index>=d.table.body.length-2)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY+3;});
+    if(F.aPagar.length){novaPag(20);
+      doc.autoTable({startY:y+1,head:[["#","Pagamentos a realizar","Favorecido","Chave Pix","Valor"]],
+        body:[...F.aPagar.map((x,i)=>[String(i+1),x.g.desc+(x.parcial?" (saldo final)":""),x.g.fav||"-",x.g.pix?tipoPix(x.g.pix)+": "+fmtPix(x.g.pix):"a definir",brl(x.valor)]),["","TOTAL A PAGAR","","",brl(F.total)]],
+        margin:{left:M,right:M},styles:{fontSize:9,cellPadding:1.6,valign:"middle"},headStyles:{fillColor:[254,243,199],textColor:esc},columnStyles:{0:{cellWidth:8},4:{halign:"right",fontStyle:"bold"}},
+        didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY+3;}}
+  // observações
+  titulo(nObs+". OBSERVAÇÕES");
 
   const linhas=doc.splitTextToSize(obs.trim()||"Sem observações no período.",CW);
   linhas.forEach(l=>{novaPag(5);txt(l,M,y+3,{s:9.5});y+=4.8;});
@@ -1090,6 +1167,7 @@ function resumoCustos(o,c){
   const mo=porEt.reduce((a,x)=>a+x.mo,0);
   return{porEt,semEt,orc:c.custo,mo,mat:c.custo-mo,...totGastos(o.gastos||[])};}
 function syncPago(g){g.pago=r2((g.pags||[]).reduce((a,p)=>a+(+p.valor||0),0));}
+function pixConhecidos(){const m={};obras.forEach(x=>(x.gastos||[]).forEach(g=>{if(g.fav&&g.pix)m[g.fav]=g.pix;}));return m;}
 function registrarPag(o,g){const falta=r2(g.valor-g.pago);const va=el("input",{inputmode:"decimal",value:String(falta).replace(".",",")}),dt=el("input",{type:"date",value:hojeISO()}),ob=el("input",{placeholder:"Ex.: adiantamento, Pix, 1ª parcela…"});
   const hist=(g.pags||[]).length?el("div",{class:"hint",style:"margin:0"},"Já pago: "+g.pags.map(p=>brl(p.valor)+(p.data?" em "+fdI(p.data):"")).join(" · ")):null;
   modal("Registrar pagamento — "+g.desc,el("div",{style:"display:grid;gap:10px"},el("p",{class:"hint",style:"margin:0"},"Total "+brl(g.valor)+" · falta "+brl(falta)+". Pode ser só uma parte (adiantamento ou parcela)."),hist,
@@ -1108,22 +1186,124 @@ function formGasto(o,g,onOk){const novo=!g;g=g?JSON.parse(JSON.stringify(g)):{id
   const temPags=!novo&&(g.pags||[]).length>0;
   st.onchange=()=>{cpg.style.display=st.value==="parcial"?"":"none";};
   const vc=el("input",{type:"date",value:g.venc||""}),ob=el("input",{value:g.obs||"",placeholder:"Opcional"});
+  const PX=pixConhecidos(),dlid="dl"+uid();
+  const fv=el("input",{value:g.fav||"",placeholder:"Ex.: Paulo Sergio Cunha, Depósito DSJ",list:dlid}),px=el("input",{value:g.pix||"",placeholder:"CPF, CNPJ, telefone, e-mail ou chave aleatória"});
+  const dlst=el("datalist",{id:dlid},...Object.keys(PX).map(n=>el("option",{value:n})));
+  fv.oninput=()=>{const k=PX[fv.value.trim()];if(k&&!px.value)px.value=k;};
   const corpo=el("div",{style:"display:grid;gap:10px;max-height:70vh;overflow:auto"},campo("Etapa",es),campo("Subetapa",ss),el("div",{class:"g2"},campo("Categoria",cs),campo("Valor (R$)",va)),
-    campo("Descrição",de),temPags?el("div",{class:"g2"},campo("Data / vencimento",vc)):el("div",{class:"g2"},campo("Situação",st),campo("Data / vencimento",vc)),temPags?null:cpg,
+    campo("Descrição",de),el("div",{class:"g2"},campo("Favorecido (quem recebe)",fv),campo("Chave Pix",px)),dlst,temPags?el("div",{class:"g2"},campo("Data / vencimento",vc)):el("div",{class:"g2"},campo("Situação",st),campo("Data / vencimento",vc)),temPags?null:cpg,
     temPags?el("div",null,el("label",null,"Pagamentos registrados"),...g.pags.map((p,i)=>el("div",{style:"display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px solid var(--bd)"},
       el("span",{style:"flex:1"},brl(p.valor)+(p.data?" · "+fdI(p.data):"")+(p.obs?" · "+p.obs:"")),
       el("button",{class:"sm",type:"button",onclick:e=>{g.pags.splice(i,1);e.target.closest("div").remove();}},"✕")))):null,campo("Observação",ob));
   modal(novo?"Lançar gasto":"Editar gasto",corpo,[["Salvar","pri",()=>{const v=num(va.value);if(!(v>0)){toast("Informe o valor");return false;}
-      g.et=es.value;g.sid=ss.value;g.cat=cs.value;g.desc=de.value.trim()||cs.value;g.valor=r2(v);g.venc=vc.value;g.obs=ob.value.trim();
+      g.et=es.value;g.sid=ss.value;g.cat=cs.value;g.desc=de.value.trim()||cs.value;g.valor=r2(v);g.venc=vc.value;g.obs=ob.value.trim();g.fav=fv.value.trim();g.pix=px.value.trim();
       if(!temPags){const pv=st.value==="pago"?g.valor:st.value==="apagar"?0:r2(Math.min(g.valor,num(pg.value)));g.pags=pv>0?[{id:uid(),data:st.value==="pago"?(g.venc||hojeISO()):hojeISO(),valor:pv,obs:""}]:[];}
       syncPago(g);
       o.gastos=o.gastos||[];const i=o.gastos.findIndex(x=>x.id===g.id);if(i>=0)o.gastos[i]=g;else o.gastos.push(g);salvar(o);render();onOk&&onOk();toast("Gasto salvo");}],["Cancelar"]]);}
+// ---------- Fechamento de etapa ----------
+const cpfOk=d=>{if(!/^\d{11}$/.test(d)||/^(\d)\1{10}$/.test(d))return false;const dv=n=>{let s=0;for(let i=0;i<n;i++)s+=+d[i]*(n+1-i);const r=s*10%11;return r===10?0:r;};return dv(9)===+d[9]&&dv(10)===+d[10];};
+const cnpjOk=d=>{if(!/^\d{14}$/.test(d)||/^(\d)\1{13}$/.test(d))return false;const dv=n=>{const w=n===12?[5,4,3,2,9,8,7,6,5,4,3,2]:[6,5,4,3,2,9,8,7,6,5,4,3,2];let s=0;for(let i=0;i<n;i++)s+=+d[i]*w[i];const r=s%11;return r<2?0:11-r;};return dv(12)===+d[12]&&dv(13)===+d[13];};
+const tipoPix=k=>{k=String(k||"");const d=k.replace(/\D/g,"");if(/@/.test(k))return"e-mail";if(/[a-f0-9]{8}-[a-f0-9]{4}-/i.test(k))return"chave aleatória";
+  if(cnpjOk(d))return"CNPJ";if(cpfOk(d)&&!/^\+|^\(/.test(k.trim()))return"CPF";if(/^\+?\d{10,13}$/.test(d))return"telefone";return"chave";};
+const fmtPix=k=>{k=String(k||"");const d=k.replace(/\D/g,""),t=tipoPix(k);
+  if(t==="CNPJ")return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,"$1.$2.$3/$4-$5");
+  if(t==="CPF")return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,"$1.$2.$3-$4");return k;};
+function dadosFechamento(o,sids){const c=calcular(o),out=[],aPagar=[];
+  sids.forEach(sid=>{const r=c.ordem.find(x=>x.s.id===sid);if(!r)return;const gs=(o.gastos||[]).filter(g=>g.sid===sid);
+    const real=gs.reduce((a,g)=>a+(+g.valor||0),0),pago=gs.reduce((a,g)=>a+(+g.pago||0),0);
+    const pags=[];gs.forEach(g=>(g.pags||[]).forEach(p=>pags.push({desc:p.obs||g.desc,valor:+p.valor||0,data:p.data,g})));
+    out.push({r,s:r.s,et:nomeEtapa(o,r.s.etapa),orc:r2(r.custo),real:r2(real),pago:r2(pago),saldo:r2(real-pago),gs,pags,motivo:(r.s.fech&&r.s.fech.motivo)||""});
+    gs.filter(g=>(+g.valor||0)-(+g.pago||0)>0.004).forEach(g=>aPagar.push({g,s:r.s,valor:r2(g.valor-g.pago),parcial:(+g.pago||0)>0}));});
+  return{itens:out,aPagar,total:r2(aPagar.reduce((a,x)=>a+x.valor,0))};}
+function textoFechamento(o,F){const L=[],nomes=F.itens.map(x=>x.s.nome);
+  L.push("Olá! Segue o fechamento "+(nomes.length>1?"das etapas de "+nomes.slice(0,-1).join(", ")+" e "+nomes[nomes.length-1]:"da etapa de "+(nomes[0]||""))+".");
+  F.itens.forEach(x=>{L.push("");L.push("*"+x.s.nome.toUpperCase()+"*");
+    const dif=r2(x.real-x.orc);
+    if(x.orc>0&&x.real>0&&Math.abs(dif)>=0.5){L.push("O orçamento inicial era de "+brl(x.orc)+", e o total ficou em "+brl(x.real)+".");
+      L.push((dif>0?"Acréscimo de "+brl(dif)+".":"Economia de "+brl(-dif)+".")+(x.motivo?" Motivo: "+x.motivo.trim().replace(/\.?$/,"."):""));}
+    else if(x.real>0)L.push((x.gs.length===1&&x.pags.length?"Valor total do serviço: ":"Total da etapa: ")+brl(x.real));
+    else if(x.orc>0)L.push("Orçado: "+brl(x.orc)+" (nenhum gasto lançado ainda)");
+    if(x.pags.length){
+      L.push("");L.push("Pagamentos já realizados:");x.pags.forEach(p=>L.push("• "+p.desc+": "+brl(p.valor)));
+      L.push("Total pago: "+brl(x.pago));if(x.saldo>0.004)L.push("Saldo para quitar: "+brl(x.saldo));else L.push("Etapa quitada.");}
+  });
+  if(F.aPagar.length){L.push("");L.push("*PAGAMENTOS A REALIZAR*");
+    F.aPagar.forEach((x,i)=>{L.push("");L.push((i+1)+". *"+x.g.desc+(x.parcial?" (saldo final)":"")+": "+brl(x.valor)+"*");
+      if(x.g.pix)L.push("Pix ("+tipoPix(x.g.pix)+"): "+fmtPix(x.g.pix));else L.push("Chave Pix: envio em seguida");
+      if(x.g.fav)L.push(x.g.fav);});
+    L.push("");L.push("*Total: "+brl(F.total)+"*");}
+  else{L.push("");L.push("Não há pagamentos pendentes nestas etapas.");}
+  L.push("");L.push("Fico à disposição para qualquer dúvida.");return L.join("\n");}
+function pdfFechamento(o,F){const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:"mm",format:"a4"});
+  const W=210,M=14,CW=W-2*M;let y=M;const azul=[29,78,216],cinza=[107,114,128],esc=[17,24,39];
+  const txt=(t,x,yy,o2={})=>{doc.setFont("helvetica",o2.b?"bold":"normal");doc.setFontSize(o2.s||10);doc.setTextColor(...(o2.c||esc));doc.text(String(t),x,yy,o2.al?{align:o2.al}:undefined);};
+  const novaPag=h=>{if(y+h>282){doc.addPage();y=M;}};
+  const titulo=t=>{novaPag(16);y+=4;doc.setFillColor(...azul);doc.rect(M,y,CW,7,"F");txt(t,M+2,y+5,{b:1,s:10.5,c:[255,255,255]});y+=9;};
+  const tb=(head,body,cs,extra)=>{doc.autoTable(Object.assign({startY:y,head:[head],body,margin:{left:M,right:M},styles:{fontSize:9,cellPadding:1.6,valign:"middle"},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:cs||{}},extra||{}));y=doc.lastAutoTable.finalY+3;};
+  txt("FECHAMENTO DE ETAPA",M,y+5,{b:1,s:14,c:azul});txt("Emissão: "+fdI(hojeISO()),W-M,y+5,{s:9.5,c:cinza,al:"right"});y+=10;
+  doc.setDrawColor(...azul);doc.setLineWidth(0.6);doc.line(M,y,W-M,y);y+=3;
+  tb(["Obra","","Cliente",""],[[o.nome||"—","",o.cliente||"—",""]],{},{theme:"plain",showHead:false,body:[["Obra",o.nome||"—","Cliente",o.cliente||"—"],["Endereço",[o.endereco,o.cidade].filter(Boolean).join(" - ")||"—","Etapas",F.itens.map(x=>x.s.nome).join(", ")]],columnStyles:{0:{fontStyle:"bold",textColor:cinza,cellWidth:24},2:{fontStyle:"bold",textColor:cinza,cellWidth:20}}});
+  titulo("1. RESUMO DAS ETAPAS");
+  tb(["Etapa","Orçado","Realizado","Diferença","Pago","Saldo"],[...F.itens.map(x=>{const d=r2(x.real-x.orc);return[x.s.nome+"\n"+x.et,x.orc?brl(x.orc):"-",brl(x.real),x.orc&&x.real?(d>0?"+":"")+brl(d):"-",brl(x.pago),x.saldo>0.004?brl(x.saldo):"quitado"];}),
+    ["TOTAL",brl(r2(F.itens.reduce((a,x)=>a+x.orc,0))),brl(r2(F.itens.reduce((a,x)=>a+x.real,0))),"",brl(r2(F.itens.reduce((a,x)=>a+x.pago,0))),brl(F.total)]],
+    {1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"},5:{halign:"right"}},{didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});
+  const mot=F.itens.filter(x=>x.motivo&&Math.abs(x.real-x.orc)>=0.5);
+  if(mot.length){titulo("2. JUSTIFICATIVA DAS DIFERENÇAS");mot.forEach(x=>{novaPag(10);txt(x.s.nome,M,y+3,{b:1,s:9.5});y+=5;doc.splitTextToSize(x.motivo,CW).forEach(l=>{novaPag(5);txt(l,M,y+3,{s:9.5});y+=4.6;});y+=2;});}
+  titulo((mot.length?"3":"2")+". LANÇAMENTOS E PAGAMENTOS");
+  F.itens.forEach(x=>{if(!x.gs.length)return;novaPag(14);txt(x.s.nome,M,y+3,{b:1,s:9.5,c:azul});y+=5;
+    const body=[];x.gs.forEach(g=>{body.push([{content:g.desc,styles:{fontStyle:"bold"}},g.cat||"",brl(+g.valor||0),"",""]);(g.pags||[]).forEach(p=>body.push(["   "+(p.obs||"Pagamento"),"",""," "+(p.data?fdI(p.data):""),brl(+p.valor||0)]));});
+    tb(["Descrição","Categoria","Valor","Data","Pago"],body,{2:{halign:"right"},4:{halign:"right"}});});
+  titulo((mot.length?"4":"3")+". PAGAMENTOS A REALIZAR");
+  if(!F.aPagar.length){txt("Não há pagamentos pendentes nestas etapas.",M,y+3,{s:9.5,c:cinza});y+=7;}
+  else tb(["#","Descrição","Favorecido","Chave Pix","Valor"],[...F.aPagar.map((x,i)=>[String(i+1),x.g.desc+(x.parcial?" (saldo final)":""),x.g.fav||"-",x.g.pix?tipoPix(x.g.pix)+": "+fmtPix(x.g.pix):"a definir",brl(x.valor)]),
+    ["","TOTAL","","",brl(F.total)]],{0:{cellWidth:8},4:{halign:"right",fontStyle:"bold"}},{didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});
+  novaPag(30);y+=16;doc.setDrawColor(...esc);doc.setLineWidth(0.3);doc.line(W/2-40,y,W/2+40,y);
+  txt(o.rt||"Responsável técnico",W/2,y+5,{b:1,s:9.5,al:"center"});txt("Responsável técnico"+(o.art?"  -  ART/RRT "+o.art:""),W/2,y+9.5,{s:8.5,c:cinza,al:"center"});
+  const np=doc.getNumberOfPages();for(let p=1;p<=np;p++){doc.setPage(p);txt((o.nome||"")+"  -  Fechamento de etapa",M,292,{s:7.5,c:cinza});txt("Página "+p+" de "+np,W-M,292,{s:7.5,c:cinza,al:"right"});}
+  return doc.output("blob");}
+let fechSel=null;
+function fechamento(o){
+  const c=calcular(o);if(!fechSel||fechSel.obra!==o.id)fechSel={obra:o.id,sids:new Set()};
+  const box=el("div",{style:"display:grid;gap:10px;max-height:72vh;overflow:auto"});
+  const desenhar=()=>{box.innerHTML="";
+    box.append(el("p",{class:"hint",style:"margin:0"},"Marque as subetapas que você está fechando. O app junta os gastos lançados, compara com o orçado e monta a mensagem para o cliente com os pagamentos a fazer e o Pix de cada um."));
+    o.etapas.forEach(et=>{const rs=c.ordem.filter(r=>r.s.etapa===et.id&&(r.custo>0||(o.gastos||[]).some(g=>g.sid===r.s.id)));if(!rs.length)return;
+      box.append(el("div",{class:"sec",style:"margin:6px 0 0"},et.nome));
+      rs.forEach(r=>{const gs=(o.gastos||[]).filter(g=>g.sid===r.s.id),real=gs.reduce((a,g)=>a+(+g.valor||0),0),ap=gs.reduce((a,g)=>a+(+g.valor||0)-(+g.pago||0),0);
+        const ck=el("input",{type:"checkbox",style:"width:20px;height:20px;flex:none"});ck.checked=fechSel.sids.has(r.s.id);
+        ck.onchange=()=>{ck.checked?fechSel.sids.add(r.s.id):fechSel.sids.delete(r.s.id);desenhar();};
+        box.append(el("label",{style:"display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin:0;color:var(--tx);font-size:.95rem"},ck,
+          el("div",{style:"flex:1"},el("b",null,r.s.nome),el("small",{style:"display:block;color:var(--mut)"},"Orçado "+brl(r2(r.custo))+" · lançado "+brl(r2(real))+(ap>0.004?" · a pagar "+brl(r2(ap)):gs.length?" · quitado":"")))));
+        if(fechSel.sids.has(r.s.id)){const d=r2(real-r.custo);
+          if(r.custo>0&&real>0&&Math.abs(d)>=0.5){const t=el("textarea",{placeholder:d>0?"Por que custou mais? Ex.: optei por nivelar o contrapiso existente em vez de quebrar…":"Por que saiu mais barato? (opcional)",style:"min-height:60px"});
+            t.value=(r.s.fech&&r.s.fech.motivo)||"";t.oninput=()=>{r.s.fech=Object.assign(r.s.fech||{},{motivo:t.value});salvar(o);atualizar();};
+            box.append(el("div",{style:"margin-left:30px"},el("label",null,(d>0?"Acréscimo de ":"Economia de ")+brl(Math.abs(d))+": motivo"),t));}
+          const semPix=gs.filter(g=>(+g.valor||0)-(+g.pago||0)>0.004&&!g.pix);
+          if(semPix.length)box.append(el("div",{class:"alert w",style:"margin:0 0 0 30px"},"Sem chave Pix: "+semPix.map(g=>g.desc).join(", ")+". ",
+            el("button",{class:"sm",onclick:()=>{fecharModais();formGasto(o,semPix[0],()=>setTimeout(()=>fechamento(o),50));}},"Informar Pix")));}
+      });});
+    if(!box.querySelector("input[type=checkbox]"))box.append(el("p",{class:"st"},"Nenhuma subetapa com orçamento ou gasto lançado."));
+    const pv=el("textarea",{readonly:"",id:"fechTxt",style:"min-height:220px;font-size:.85rem;font-family:ui-monospace,monospace"});
+    box.append(el("div",{class:"sec",style:"margin:10px 0 0"},"Mensagem para o cliente"),pv);atualizar();};
+  const atualizar=()=>{const pv=box.querySelector("#fechTxt");if(!pv)return;const ids=[...fechSel.sids].filter(id=>o.servicos.some(s=>s.id===id));
+    pv.value=ids.length?textoFechamento(o,dadosFechamento(o,ids)):"Marque ao menos uma subetapa.";};
+  desenhar();
+  const ids=()=>[...fechSel.sids].filter(id=>o.servicos.some(s=>s.id===id));
+  modal("📋 Fechamento de etapa",box,[
+    ["Copiar mensagem","pri",()=>{if(!ids().length){toast("Marque ao menos uma subetapa");return false;}const t=textoFechamento(o,dadosFechamento(o,ids()));
+      (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast("Mensagem copiada")).catch(()=>{const pv=box.querySelector("#fechTxt");pv.select();toast("Selecione e copie o texto");});return false;}],
+    ["WhatsApp","",()=>{if(!ids().length){toast("Marque ao menos uma subetapa");return false;}window.open("https://wa.me/?text="+encodeURIComponent(textoFechamento(o,dadosFechamento(o,ids()))),"_blank");return false;}],
+    ["PDF","",()=>{if(!ids().length){toast("Marque ao menos uma subetapa");return false;}
+      try{const F=dadosFechamento(o,ids());const nome=`Fechamento - ${(o.nome||"obra").replace(/[\\/:*?"<>|]/g,"")} - ${F.itens.map(x=>x.s.nome).join(", ").replace(/[\\/:*?"<>|]/g,"").slice(0,60)} - ${fdI(hojeISO()).replace(/\//g,"-")}.pdf`;
+        salvarPdf(pdfFechamento(o,F),nome).then(ok=>{if(ok)toast("PDF do fechamento gerado");});}catch(e){console.error(e);toast("Erro ao gerar o PDF");}return false;}],
+    ["Fechar"]]);}
+function fecharModais(){document.querySelectorAll(".modal").forEach(m=>{if(m.id!=="login")m.remove();});}
 function telaCustos(a,o){
   const c=calcular(o),R=resumoCustos(o,c);
   a.append(el("div",{class:"card"},el("h2",null,"Resumo financeiro"),el("div",{class:"kpi"},
     ...[["Orçado (planejamento)",brl(R.orc)],["Gasto lançado",brl(R.valor)],["Pago",brl(R.pago),"var(--ok)"],["A pagar",brl(R.valor-R.pago),R.valor-R.pago>0?"var(--wa)":""]]
       .map(([t,v,cor])=>el("div",null,el("small",null,t),el("b",{style:cor?"color:"+cor:""},v)))),
-    el("button",{class:"pri",style:"width:100%;margin-top:12px",onclick:()=>formGasto(o)},"+ Lançar gasto")));
+    el("div",{class:"g2",style:"margin-top:12px"},el("button",{class:"pri",onclick:()=>formGasto(o)},"+ Lançar gasto"),el("button",{onclick:()=>fechamento(o)},"📋 Fechamento de etapa"))));
   // a pagar por mês
   const ab=(o.gastos||[]).filter(g=>(+g.valor||0)-(+g.pago||0)>0.004);
   if(ab.length){const pm={};ab.forEach(g=>{const k=g.venc?g.venc.slice(0,7):"sem data";(pm[k]=pm[k]||[]).push(g);});
@@ -1150,6 +1330,7 @@ function telaCustos(a,o){
       const tag=ap<=0?el("span",{class:"tag2 ok"},"Pago"):g.pago>0?el("span",{class:"tag2",style:"color:var(--wa)"},"Falta "+brl(ap)):el("span",{class:"tag2",style:"background:color-mix(in srgb,var(--wa) 18%,transparent);color:var(--wa)"},"A pagar");
       lst.append(el("div",{class:"proj"},el("div",{class:"inf"},el("b",null,g.desc+" — "+brl(g.valor)),
         el("small",null,[g.cat,sv?sv.nome:null,g.venc?(ap>0?"vence ":"")+fdI(g.venc):null,g.obs||null].filter(Boolean).join(" · ")),
+        g.fav||g.pix?el("small",{style:"display:block"},"Pix: "+[g.pix,g.fav].filter(Boolean).join(" · ")):null,
         (g.pags||[]).length&&ap>0?el("small",{style:"display:block;color:var(--ok)"},"Pago: "+g.pags.map(p=>brl(p.valor)+(p.data?" em "+fdI(p.data):"")).join(" + ")):null),tag,
         ap>0?el("button",{class:"sm pri",title:"Registrar pagamento (total ou parcial)",onclick:()=>registrarPag(o,g)},"$ Pagar"):null,
         el("button",{class:"sm",title:"Editar",onclick:()=>formGasto(o,g)},"✎"),
@@ -1169,7 +1350,9 @@ function telaGeral(a,o){
     ...(o.valorContrato?[["Valor do contrato",brl(o.valorContrato)]]:[]),...(c.custo?(()=>{const mo=c.ordem.reduce((a,r)=>a+(r.mo||0),0);return[["Mão de obra",brl(r2(mo))],["Materiais",brl(r2(c.custo-mo))],["Custo planejado (total)",brl(r2(c.custo))]];})():[]),
     ...((o.gastos||[]).length?(()=>{const t=totGastos(o.gastos);return[["Gasto até agora",brl(t.valor)],["Pago",brl(t.pago)],["A pagar",brl(t.valor-t.pago)]];})():[]),
     ["Projetos cadastrados",String((o.projetos||[]).length)]];
-  a.append(el("div",{class:"card"},el("div",{class:"kpi"},...itens.map(([t,v])=>el("div",null,el("small",null,t),el("b",null,v))))));
+  a.append(el("div",{class:"card"},el("div",{class:"kpi"},...itens.map(([t,v])=>el("div",null,el("small",null,t),el("b",null,v)))),
+    pausaObra(o)?null:el("button",{class:"sm",style:"margin-top:12px",onclick:()=>paralisarObra(o)},"⏸ Paralisar obra inteira"),
+    (o.pausasObra||[]).some(p=>p.ate)?el("small",{style:"display:block;margin-top:8px;color:var(--mut)"},"Paralisações anteriores: "+o.pausasObra.filter(p=>p.ate).map(p=>fdI(p.de)+" a "+fdI(addDiaN(p.ate,-1))+" ("+p.motivo+")").join("; ")):null));
   if(fimC!==null&&c.fim>fimC+0.01)a.append(el("div",{class:"alert w"},el("b",null,"Atenção: "),`o cronograma termina ${Math.ceil(c.fim-fimC)} dias úteis depois do prazo contratual.`));
   const at=c.ordem.filter(r=>and.por[r.s.id].atraso>0);
   const agora=c.ordem.filter(r=>r.inicio<=hi&&r.fim>hi&&and.por[r.s.id].feitos<and.por[r.s.id].n);
@@ -1342,7 +1525,7 @@ function eixo(cal){const d0=cal.data(0);
     date:k=>{const x=new Date(d0);x.setDate(x.getDate()+k);return x;},k:dt=>dDiff(d0,dt)};}
 const SEM=["D","S","T","Q","Q","S","S"];
 function tipoDia(o,dt){const iso=dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
-  if((o.feriados||[]).includes(iso))return"fer";const w=dt.getDay();if(w===0||(w===6&&!o.sabado))return"fds";return"";}
+  if((o.feriados||[]).includes(iso))return"fer";if((o.pausasObra||[]).some(p=>p.de&&iso>=p.de&&iso<=(p.ate?addDiaN(p.ate,-1):hojeISO())))return"par";const w=dt.getDay();if(w===0||(w===6&&!o.sabado))return"fds";return"";}
 const mesAno=dt=>dt.toLocaleDateString("pt-BR",{month:"short"}).replace(".","")+"/"+String(dt.getFullYear()).slice(2);
 function infoPausa(o,r,p){const cal=r.cal,ab=!p.ate;
   const dias=Math.max(0,(ab?cal.idx(hojeISO()):cal.idx(p.ate))-cal.idx(p.de));
@@ -1443,12 +1626,12 @@ function grafico(c,o){
   // colunas de dias (fim de semana / feriado)
   const hojeK=E.k(new Date());
   for(let k=0;k<nC;k++){const dt=E.date(k),t=tipoDia(o,dt),x=XC(k);
-    if(t)mk(G,"rect",{x,y:TOP-26,width:px,height:Hg-TOP+26,fill:t==="fer"?"#dc2626":mut,"fill-opacity":t==="fer"?"0.12":"0.13"});
+    if(t)mk(G,"rect",{x,y:TOP-26,width:px,height:Hg-TOP+26,fill:(t==="fer"||t==="par")?"#dc2626":mut,"fill-opacity":(t==="fer"||t==="par")?"0.12":"0.13"});
     if(k===hojeK)mk(G,"rect",{x,y:TOP-26,width:px,height:Hg-TOP+26,fill:"#facc15","fill-opacity":"0.22"});
     if(dt.getDate()===1||k===0){mk(G,"line",{x1:x,x2:x,y1:0,y2:H,stroke:bd,"stroke-width":"1.5"});
       mk(G,"text",{x:x+3,y:13,fill:tx,"font-size":"11","font-weight":"700"},dt.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}).replace(" de ","/"));}
     else mk(G,"line",{x1:x,x2:x,y1:TOP-26,y2:Hg,stroke:bd,"stroke-opacity":dt.getDay()===1?"0.9":"0.3"});
-    const cor=t==="fer"?"#dc2626":t?mut:tx;
+    const cor=(t==="fer"||t==="par")?"#dc2626":t?mut:tx;
     mk(G,"text",{x:x+px/2,y:TOP-15,fill:cor,"font-size":"9","text-anchor":"middle"},SEM[dt.getDay()]);
     mk(G,"text",{x:x+px/2,y:TOP-4,fill:cor,"font-size":"10","font-weight":"700","text-anchor":"middle"},String(dt.getDate()));}
   mk(G,"line",{x1:0,x2:W,y1:TOP-0.5,y2:TOP-0.5,stroke:bd});
@@ -1493,7 +1676,7 @@ function grafico(c,o){
   // dias sem trabalho (fim de semana/feriado) ficam "apagados" por cima das barras
   for(let k=0;k<nC;k++){const t=tipoDia(o,E.date(k));if(!t)continue;
     mk(G,"rect",{x:XC(k),y:TOP,width:px,height:Hg-TOP,fill:"var(--card)","fill-opacity":"0.5","pointer-events":"none"});
-    mk(G,"rect",{x:XC(k),y:TOP,width:px,height:Hg-TOP,fill:t==="fer"?"#dc2626":mut,"fill-opacity":t==="fer"?"0.10":"0.12","pointer-events":"none"});}
+    mk(G,"rect",{x:XC(k),y:TOP,width:px,height:Hg-TOP,fill:(t==="fer"||t==="par")?"#dc2626":mut,"fill-opacity":(t==="fer"||t==="par")?"0.10":"0.12","pointer-events":"none"});}
   topo.forEach(g=>G.append(g));
   const mx=Math.max(1,...c.efe),base=Hg+EH+8;
   mk(G,"line",{x1:0,x2:W,y1:Hg,y2:Hg,stroke:bd});mk(G,"line",{x1:0,x2:W,y1:base,y2:base,stroke:bd});
