@@ -1782,7 +1782,10 @@ auth.onAuthStateChanged(u=>{
       ask("O e-mail "+u.email+" não tem acesso a este app.",[["Sair",true,"pri"]]).then(()=>{auth.signOut().then(()=>fs.terminate()).then(()=>fs.clearPersistence()).catch(()=>{}).finally(()=>location.reload());});}
     else $("st").textContent="Erro ao carregar ("+e.code+")";});
 });
-if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+// atualização automática: ao chegar uma versão nova, recarrega sozinho (se não estiver salvando nada)
+if("serviceWorker" in navigator){const tinhaSW=!!navigator.serviceWorker.controller;let recarregou=false;
+  navigator.serviceWorker.register("sw.js").then(reg=>{const checar=()=>reg.update().catch(()=>{});document.addEventListener("visibilitychange",()=>{if(!document.hidden)checar();});setInterval(checar,30*60000);}).catch(()=>{});
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!tinhaSW||recarregou)return;recarregou=true;const tenta=()=>{if(ocupado()||document.querySelector(".modal:not(#login)"))return setTimeout(tenta,1500);toast("App atualizado");setTimeout(()=>location.reload(),600);};tenta();});}
 render();
 </script>
 </body>
