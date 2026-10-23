@@ -307,10 +307,14 @@ function matServ(o,s,N){return (o.materiais||[]).filter(m=>m.sid===s.id).reduce(
 const antecDe=m=>m.antec===""||m.antec==null?ANTEC_PADRAO:Math.max(0,+m.antec||0);
 // uma compra por subetapa: data = início − maior antecedência entre os materiais dela
 function comprasObra(o,c){c=c||calcular(o);const out=[];
+  if(pausaObra(o))return out;
   c.ordem.forEach(r=>{const ms=(o.materiais||[]).filter(m=>m.sid===r.s.id),gen=!ms.length;
+    // lembrete genérico só para subetapa planejada de verdade: com duração, liberada e que precisa de compra
+    if(gen&&(o.semLembreteGen||r.s.semCompra||!(+r.s.dur>0||r.tp==="periodos")||r.libSt==="travada"))return;
     const ex=o.exec[r.s.id]||{},iniciado=Object.keys(ex).length>0||(gen&&r.cal.iso(r.cal.data(r.inicio))<=hojeISO());
     const ini=r.cal.iso(r.cal.data(r.inicio)),ant=gen?ANTEC_PADRAO:Math.max(...ms.map(antecDe));
-    out.push({o,r,sid:r.s.id,ms,gen,ini,data:addDiaN(ini,-ant),ant,iniciado,comprado:o.compras[r.s.id]||null,
+    let dCompra=addDiaN(ini,-ant);if(gen&&r.libSt==="pendente"&&dCompra<hojeISO())dCompra=hojeISO();
+    out.push({o,r,sid:r.s.id,ms,gen,ini,pend:r.libSt==="pendente",data:dCompra,ant,iniciado,comprado:o.compras[r.s.id]||null,
       itens:ms.map(m=>({nome:m.nome,qtd:r2(matQtd(m,r.s,c.N)),un:m.un||"un"})),total:ms.reduce((a,m)=>a+matTotal(m,r.s,c.N),0)});});
   return out;}
 const MSG_GEN="Etapa vai iniciar: verificar e comprar os materiais necessários (sem lista cadastrada)";
@@ -373,13 +377,20 @@ function telaMat(a,o){
       cd.append(bl);});
     a.append(cd);});
   if(!o.materiais.length)a.append(el("p",{class:"st"},"Nenhum material cadastrado."));
+  {const ck=el("input",{type:"checkbox",style:"width:20px;height:20px"});ck.checked=!o.semLembreteGen;ck.onchange=()=>{o.semLembreteGen=!ck.checked;salvar(o);render();};
+    a.append(el("label",{class:"card",style:"display:flex;gap:10px;align-items:center;cursor:pointer;color:var(--tx);font-size:.95rem"},ck,
+      el("div",null,el("b",null,"Lembrar subetapas sem lista de materiais"),el("small",{style:"display:block;color:var(--mut)"},"Aviso genérico "+ANTEC_PADRAO+" dias antes do início, só para subetapas com duração e já liberadas. Desligue se esta obra não precisa."))));}
+  const dispensadas=o.servicos.filter(s=>s.semCompra);
   if(gens.length){const cd=el("div",{class:"card"},el("h2",null,"Subetapas sem lista de materiais"),
       el("p",{class:"hint"},"Recebem um lembrete genérico "+ANTEC_PADRAO+" dias antes do início para verificar e comprar o necessário. Cadastre os materiais para o lembrete trazer a lista com as quantidades."));
     gens.forEach(x=>{const late=!x.comprado&&x.data<hoje;cd.append(el("div",{class:"proj"},el("i",{class:"dot",style:"background:"+x.r.cor}),
       el("div",{class:"inf"},el("b",null,x.r.s.nome),el("small",null,nomeEtapa(o,x.r.s.etapa)+" · início "+fdI(x.ini)+" · lembrete em "+fdI(x.data)+(x.comprado?" · ✓ resolvido":late?" · ⚠️ atrasado":""))),
       x.comprado?el("button",{class:"sm",onclick:()=>desfazerCompra(o,x.sid)},"Desfazer"):el("button",{class:"sm",onclick:()=>marcarComprado(o,x.sid)},"✓ Resolvido"),
-      el("button",{class:"sm",onclick:()=>formMat(o,null,x.sid)},"+ Listar")));});
+      el("button",{class:"sm",onclick:()=>formMat(o,null,x.sid)},"+ Listar"),
+      el("button",{class:"sm",title:"Esta subetapa não precisa de compra",onclick:()=>{x.r.s.semCompra=true;salvar(o);render();toast("Lembrete desligado para "+x.r.s.nome);}},"Não precisa")));});
     a.append(cd);}
+  if(dispensadas.length)a.append(el("div",{class:"card"},el("h2",null,"Sem lembrete de compra"),el("p",{class:"hint"},"Subetapas marcadas como \"não precisa\". Toque para voltar a lembrar."),
+    el("div",{style:"display:flex;gap:6px;flex-wrap:wrap"},...dispensadas.map(sv=>el("button",{class:"sm",onclick:()=>{delete sv.semCompra;salvar(o);render();}},"↺ "+sv.nome)))));
 }
 // ----- integração com o app de Rotina (coleção "agenda" no Firebase) -----
 let agendaCache={},agendaOk=true,agendaPronta=false;const agId=(oid,sid)=>"obras_"+oid+"_"+sid;
@@ -405,7 +416,10 @@ function ouvirAgenda(){if(!db)return;try{db.collection("agenda").onSnapshot(sn=>
     if(d.st==="ok"&&!o.compras[d.origem.sid]){o.compras[d.origem.sid]=d.doneAt||hojeISO();mud.add(o);}
     else if(d.st!=="ok"&&o.compras[d.origem.sid]&&d.reaberto){delete o.compras[d.origem.sid];mud.add(o);}});
   mud.forEach(o=>salvar(o));if(mud.size)render();
-  obras.forEach(syncAgenda);},e=>{agendaOk=false;});}catch(e){agendaOk=false;}}
+  obras.forEach(syncAgenda);limparOrfaos();},e=>{agendaOk=false;});}catch(e){agendaOk=false;}}
+let obrasDoServidor=false;
+function limparOrfaos(){if(!db||!agendaOk||!agendaPronta||!obrasDoServidor||!obras.length)return;const ids=new Set(obras.map(o=>o.id));
+  Object.entries(agendaCache).forEach(([id,d])=>{if(d.origem&&d.origem.app==="obras"&&!ids.has(d.origem.obra))db.collection("agenda").doc(id).delete().catch(()=>{});});}
 
 const nomeUn=(o,i)=>((o.prefixo||"Un.").trim())+" "+(i+1);
 function abrirObra(o,ab){atual=o.id;aba=ab||"geral";render();window.scrollTo(0,0);}
@@ -1732,7 +1746,8 @@ auth.onAuthStateChanged(u=>{
   unsub=fs.collection("obras").onSnapshot(sn=>{
     const novas=sn.docs.map(d=>normalizar(JSON.parse(JSON.stringify({...d.data(),id:d.id}))));
     if(ocupado()){const loc=obraAtual();obras=novas.map(x=>loc&&x.id===loc.id?loc:x);if(loc&&!obras.includes(loc))obras.push(loc);}else obras=novas;
-    obras.forEach(syncAgenda);
+    if(!(sn.metadata&&sn.metadata.fromCache))obrasDoServidor=true;
+    obras.forEach(syncAgenda);limparOrfaos();
     $("st").textContent="✓ Sincronizado · "+u.email+(sn.metadata&&sn.metadata.fromCache?" (offline)":"");
     const foco=document.activeElement&&["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName);
     if(!foco)render();
