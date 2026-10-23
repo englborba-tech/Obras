@@ -1076,8 +1076,7 @@ function pdfRelatorio(o,R,num,obs){
     didParseCell:d=>{if(d.section==="body"&&d.column.index===3){d.cell.styles.textColor=String(d.cell.raw).startsWith("-")?[220,38,38]:[21,128,61];d.cell.styles.fontStyle="bold";}}});
   y=doc.lastAutoTable.finalY+2;
   {const frase=`Até ${fdI(R.ate)} foram executados ${n1(R.fis*100)}% da obra, contra ${n1(R.plan*100)}% previstos — ${dif>=0?"à frente":"atrás"} do planejado em ${n1(Math.abs(dif))} pontos percentuais.`;
-   const l=doc.setFont("helvetica","normal").setFontSize(9).splitTextToSize(frase,CW);l.forEach(t=>{txt(t,M,y+3.5,{s:9});y+=4.4;});}
-  y=doc.lastAutoTable.finalY+3;
+   const l=doc.setFont("helvetica","normal").setFontSize(9).splitTextToSize(frase,CW);l.forEach(t=>{txt(t,M,y+3.5,{s:9});y+=4.4;});y+=1.5;}
   if(R.base){novaPag(8);const dv=R.base.desvio;txt("Término previsto: "+fd(R.cal.fim(R.c.fim))+"   |   Linha de base ("+fdI(R.base.data)+"): "+fdI(R.base.fim)+"   |   Desvio: "+(dv>0?"+":"")+dv+" dias úteis",M,y+3,{s:9,b:1,c:dv>0?[220,38,38]:[21,128,61]});y+=7;}
   // barra
   novaPag(16);y+=8;doc.setFillColor(229,231,235);doc.rect(M,y,CW,5,"F");doc.setFillColor(21,128,61);doc.rect(M,y,CW*Math.min(1,R.fis),5,"F");
@@ -1113,7 +1112,7 @@ function pdfRelatorio(o,R,num,obs){
   // ---- 6. cronograma geral por etapa (eixo em dias corridos) ----
   const E=eixo(R.cal),kEnd=Math.ceil(E.xe(R.c.fim))+1,cinzaC=[107,114,128];
   const pausasEt=et=>{const l=[];R.c.ordem.filter(r=>r.s.etapa===et).forEach(r=>(r.pausas||[]).forEach(p=>{if(p.b>p.a)l.push([E.xs(p.a),E.xs(p.b)]);}));return l;};
-  titulo("6. CRONOGRAMA GERAL POR ETAPA");
+  novaPag(36+R.etapas.length*9);titulo("6. CRONOGRAMA GERAL POR ETAPA");
   {const LW=56,GX=M+LW,GW=CW-LW-14,rh=9,X=k=>GX+k/kEnd*GW,nE=R.etapas.length;
    const mw=GW/kEnd;novaPag(22+nE*rh);const yT=y;y+=10;
    // cabeçalho: meses (centralizados no intervalo) e segundas-feiras com o dia
@@ -1150,7 +1149,7 @@ function pdfRelatorio(o,R,num,obs){
    const rows=R.c.ordem.map(r=>{const m=new Map();atividadeDias(r).forEach((v,d)=>m.set(Math.round(E.xs(d)),v));const par=new Set();
        (r.pausas||[]).forEach(p=>{for(let k=Math.round(E.xs(p.a));k<Math.round(E.xs(p.b));k++)par.add(k);});return{r,m,par};})
      .filter(x=>[...x.m.keys(),...x.par].some(k=>k>=ka&&k<kb));
-   if(rows.length&&kb>ka){titulo("7. PROGRAMAÇÃO DIA A DIA: "+fdI(R.de)+" A "+fd(E.date(kb-1)));
+   if(rows.length&&kb>ka){novaPag(40+rows.length*6);titulo("7. PROGRAMAÇÃO DIA A DIA: "+fdI(R.de)+" A "+fd(E.date(kb-1)));
      const LW=58,nd=kb-ka,cw=Math.min(8,(CW-LW)/nd),rh=6,x0=M+LW,hd=10;novaPag(hd+rows.length*rh+14);y+=5;
      const yT=y,yB=y+hd+rows.length*rh;
      for(let k=ka;k<kb;k++){const dt=E.date(k),t=tipoDia(o,dt),x=x0+(k-ka)*cw;
