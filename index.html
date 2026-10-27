@@ -1562,7 +1562,7 @@ function telaCrono(a,o){
     el("button",{class:o.base?"sm":"sm pri",onclick:async()=>{if(o.base&&!await ask("Substituir a linha de base salva em "+fdI(o.base.data)+" pelo cronograma atual?",[["Substituir",true,"dan"],["Cancelar",false]]))return;salvarBase(o,c);}},o.base?"Atualizar linha de base":"Salvar linha de base"),
     o.base?el("button",{class:"sm",onclick:async()=>{if(await ask("Remover a linha de base?",[["Remover",true,"dan"],["Cancelar",false]])){delete o.base;salvar(o);render();}}},"Remover"):null));
   const g=el("div",{class:"card"},el("h2",null,"Cronograma (Gantt)"),el("p",{class:"hint"},`Toque no título de uma etapa para recolher/abrir. Barra escura = etapa inteira. Blocos = ${P.toLowerCase()}s ou períodos (verde = confirmado); espaços = equipe parada. ● vermelho = alcança o serviço anterior. Toque em qualquer barra para ver os detalhes. Faixa hachurada com ✕ vermelho = período parado (toque para ver o motivo); 🔒 = parado agora (toque para ver o motivo ou retomar). Colunas cinza = fim de semana, rosadas = feriado, amarela = hoje. Faixa cinza fina = linha de base. Embaixo, o efetivo diário.`));
-  g.append(grafico(c,o));a.append(g);
+  g.append(barraZoom(),grafico(c,o));a.append(g);
   a.append(al);
   const t=el("table");
   t.append(el("thead",null,el("tr",null,...["Subetapa","Início","Término","Dias úteis","Equipes","Pessoas","Ritmo","Parada","Desvio","Custo"].map((h,i)=>el("th",{class:i>=3?"r":""},h)))));
@@ -1657,6 +1657,14 @@ function infoEtapa(o,c,AND,l){const cal=c.cal,rs=c.ordem.filter(r=>r.s.etapa===l
       return el("div",{style:"display:flex;gap:8px;align-items:center;font-size:.9rem"},el("i",{class:"dot",style:"background:"+r.cor}),el("span",{style:"flex:1"},r.s.nome),
         el("small",{style:"color:"+(x.feitos===x.n?"var(--ok)":x.atraso>0?"var(--no)":"var(--mut)")},x.feitos===x.n?"✓":x.atraso>0?"atrasado":fd(cal.data(r.inicio)).slice(0,5)+"–"+fd(cal.fim(r.fim)).slice(0,5)));})));
   modal(l.et.nome,corpo,[["Fechar"]]);}
+let ganttZoom=(()=>{try{const v=localStorage.getItem("obras-zoom");return v==="fit"?"fit":(+v||1);}catch(e){return 1;}})();
+function setZoom(z){ganttZoom=z;try{localStorage.setItem("obras-zoom",String(z));}catch(e){}render();}
+function barraZoom(){const niveis=[0.25,0.5,1,1.5],i=ganttZoom==="fit"?-1:niveis.indexOf(ganttZoom);
+  const b=(t,fn,on,tt)=>el("button",{class:"sm"+(on?" pri":""),title:tt||"",onclick:fn},t);
+  return el("div",{style:"display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 8px"},el("small",{style:"color:var(--mut)"},"Zoom:"),
+    b("−",()=>setZoom(niveis[Math.max(0,(i<0?2:i)-1)]),false,"Afastar"),b("+",()=>setZoom(niveis[Math.min(niveis.length-1,(i<0?1:i)+1)]),false,"Aproximar"),
+    b("Obra inteira",()=>setZoom("fit"),ganttZoom==="fit","Cabe todo o cronograma na largura da tela"),b("Normal",()=>setZoom(1),ganttZoom===1),
+    ganttZoom!=="fit"&&ganttZoom!==1?el("small",{style:"color:var(--mut)"},Math.round(ganttZoom*100)+"%"):null);}
 function grafico(c,o){
   const NS="http://www.w3.org/2000/svg",cal=c.cal,P=(o.prefixo||"Un.").trim(),E=eixo(cal);
   const css=getComputedStyle(document.documentElement),mut=css.getPropertyValue("--mut").trim(),bd=css.getPropertyValue("--bd").trim(),tx=css.getPropertyValue("--tx").trim();
@@ -1665,7 +1673,10 @@ function grafico(c,o){
     linhas.push({et,ini:Math.min(...rs.map(r=>r.inicio)),fim:Math.max(...rs.map(r=>r.fim)),n:rs.length});
     if(!fechadas.has(et.id))rs.forEach(r=>linhas.push({r}));});
   const RH=28,TOP=46,EH=70,LW=Math.min(240,Math.max(140,window.innerWidth*0.38));
-  const nC=Math.ceil(E.xe(Math.max(c.fim,1)))+3,px=Math.max(16,Math.min(26,(Math.min(1100,window.innerWidth)-LW-40)/nC));
+  const nC=Math.ceil(E.xe(Math.max(c.fim,1)))+3,disp=Math.max(200,Math.min(1100,window.innerWidth)-LW-40);
+  // zoom: "ajustar" cabe a obra inteira na tela; os outros níveis multiplicam a largura do dia
+  const px=ganttZoom==="fit"?Math.max(0.6,disp/nC):Math.max(16,Math.min(26,disp/nC))*ganttZoom;
+  const mostraDia=px>=13,mostraSem=px>=4;
   const W=nC*px+20,Hg=TOP+linhas.length*RH,H=Hg+EH+22;
   const svg=(w,h)=>{const e=document.createElementNS(NS,"svg");e.setAttribute("width",w);e.setAttribute("height",h);e.setAttribute("viewBox",`0 0 ${w} ${h}`);return e;};
   const mk=(p,t,at,txt)=>{const e=document.createElementNS(NS,t);for(const k in at)e.setAttribute(k,at[k]);if(txt!=null)e.textContent=txt;p.append(e);return e;};
@@ -1694,10 +1705,11 @@ function grafico(c,o){
     if(k===hojeK)mk(G,"rect",{x,y:TOP-26,width:px,height:Hg-TOP+26,fill:"#facc15","fill-opacity":"0.22"});
     if(dt.getDate()===1||k===0){mk(G,"line",{x1:x,x2:x,y1:0,y2:H,stroke:bd,"stroke-width":"1.5"});
       mk(G,"text",{x:x+3,y:13,fill:tx,"font-size":"11","font-weight":"700"},dt.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}).replace(" de ","/"));}
-    else mk(G,"line",{x1:x,x2:x,y1:TOP-26,y2:Hg,stroke:bd,"stroke-opacity":dt.getDay()===1?"0.9":"0.3"});
+    else if(mostraDia||(mostraSem&&dt.getDay()===1))mk(G,"line",{x1:x,x2:x,y1:TOP-26,y2:Hg,stroke:bd,"stroke-opacity":dt.getDay()===1?"0.9":"0.3"});
     const cor=(t==="fer"||t==="par")?"#dc2626":t?mut:tx;
-    mk(G,"text",{x:x+px/2,y:TOP-15,fill:cor,"font-size":"9","text-anchor":"middle"},SEM[dt.getDay()]);
-    mk(G,"text",{x:x+px/2,y:TOP-4,fill:cor,"font-size":"10","font-weight":"700","text-anchor":"middle"},String(dt.getDate()));}
+    if(mostraDia){mk(G,"text",{x:x+px/2,y:TOP-15,fill:cor,"font-size":"9","text-anchor":"middle"},SEM[dt.getDay()]);
+      mk(G,"text",{x:x+px/2,y:TOP-4,fill:cor,"font-size":"10","font-weight":"700","text-anchor":"middle"},String(dt.getDate()));}
+    else if(mostraSem&&dt.getDay()===1&&px*7>=18)mk(G,"text",{x:x+2,y:TOP-4,fill:tx,"font-size":"9","font-weight":"700"},String(dt.getDate()));}
   mk(G,"line",{x1:0,x2:W,y1:TOP-0.5,y2:TOP-0.5,stroke:bd});
   linhas.forEach((l,j)=>{const y=TOP+j*RH;if(l.et){const r=mk(G,"rect",{x:0,y,width:W,height:RH,fill:bd,"fill-opacity":"0.30",style:"cursor:pointer"});r.onclick=()=>tog(l.et.id);}
     else mk(G,"line",{x1:0,x2:W,y1:y+RH,y2:y+RH,stroke:bd,"stroke-opacity":"0.5"});});
