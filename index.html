@@ -46,7 +46,7 @@ label{display:block;font-size:.78rem;color:var(--mut);margin-bottom:3px;font-wei
 .sv{border-left:8px solid var(--c);}
 .svh{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .svh .n{font-weight:700;color:var(--mut);width:24px}
-.svh input{flex:1;font-weight:600}
+.svh input{flex:1;font-weight:600}.g6.prod>div{min-width:0}
 .svh button{min-height:40px;padding:6px 10px}
 .st{color:var(--mut);font-size:.85rem;text-align:center;margin:8px 0}
 .tw{overflow-x:auto}
@@ -1661,14 +1661,15 @@ function infoEtapa(o,c,AND,l){const cal=c.cal,rs=c.ordem.filter(r=>r.s.etapa===l
 // Duração calculada pela produção: quantidade ÷ rendimento diário (arredonda para meio dia)
 function durProd(p){const q=+p.qtd||0,r=+p.rend||0;return q>0&&r>0?Math.ceil(q/r*2)/2:0;}
 function blocoProd(o,s,qual){
+  const fixa=x=>{x.style.cssText+=";box-sizing:border-box;min-width:0;max-width:100%;width:100%";return x;};
   const p=s.prod||{},ativo=!!s.prod,box=el("details",{style:"margin:10px 0 0"});if(ativo)box.open=true;
   box.append(el("summary",{style:"cursor:pointer;font-weight:600;color:var(--mut);font-size:13px"},"📐 Calcular duração pela produção"+(ativo&&durProd(p)?" — "+durProd(p)+" dia(s)":"")));
   const aplicar=()=>{const d=durProd(s.prod);if(d){s.dur=d;}salvar(o);render();};
-  const ni=(k,ph)=>{const x=el("input",{type:"number",step:"any",min:"0",inputmode:"decimal",placeholder:ph,value:p[k]??""});
+  const ni=(k,ph)=>{const x=el("input",{type:"number",step:"any",min:"0",inputmode:"decimal",placeholder:ph,value:p[k]??""});fixa(x);
     x.onchange=()=>{s.prod=Object.assign({un:"m²"},s.prod||{},{[k]:Math.max(0,num(x.value))});aplicar();};return x;};
-  const un=el("input",{value:p.un||"m²",placeholder:"m², m, m³, un"});un.onchange=()=>{s.prod=Object.assign({},s.prod||{},{un:un.value.trim()||"m²"});salvar(o);render();};
+  const un=el("input",{value:p.un||"m²",placeholder:"m², m, m³, un"});fixa(un);un.onchange=()=>{s.prod=Object.assign({},s.prod||{},{un:un.value.trim()||"m²"});salvar(o);render();};
   const U=p.un||"m²";
-  box.append(el("div",{class:"g6",style:"margin-top:8px"},
+  box.append(el("div",{class:"g6 prod",style:"margin-top:8px"},
     campo("Quantidade "+qual,ni("qtd","ex.: 210")),campo("Unidade",un),
     campo("Rendimento ("+U+"/dia)",ni("rend","ex.: 35"))));
   const d=durProd(p);
