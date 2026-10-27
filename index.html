@@ -1661,18 +1661,18 @@ function infoEtapa(o,c,AND,l){const cal=c.cal,rs=c.ordem.filter(r=>r.s.etapa===l
 // Duração calculada pela produção: quantidade ÷ rendimento diário (arredonda para meio dia)
 function durProd(p){const q=+p.qtd||0,r=+p.rend||0;return q>0&&r>0?Math.ceil(q/r*2)/2:0;}
 function blocoProd(o,s,qual){
-  const p=s.prod||{},ativo=!!s.prod,box=el("details",{class:"hint",style:"margin:8px 0 0"});if(ativo)box.open=true;
-  box.append(el("summary",{style:"cursor:pointer;font-weight:600"},"📐 Calcular duração pela produção"+(ativo&&durProd(p)?" — "+durProd(p)+" dia(s)":"")));
+  const p=s.prod||{},ativo=!!s.prod,box=el("details",{style:"margin:10px 0 0"});if(ativo)box.open=true;
+  box.append(el("summary",{style:"cursor:pointer;font-weight:600;color:var(--mut);font-size:13px"},"📐 Calcular duração pela produção"+(ativo&&durProd(p)?" — "+durProd(p)+" dia(s)":"")));
   const aplicar=()=>{const d=durProd(s.prod);if(d){s.dur=d;}salvar(o);render();};
   const ni=(k,ph)=>{const x=el("input",{type:"number",step:"any",min:"0",inputmode:"decimal",placeholder:ph,value:p[k]??""});
     x.onchange=()=>{s.prod=Object.assign({un:"m²"},s.prod||{},{[k]:Math.max(0,num(x.value))});aplicar();};return x;};
   const un=el("input",{value:p.un||"m²",placeholder:"m², m, m³, un"});un.onchange=()=>{s.prod=Object.assign({},s.prod||{},{un:un.value.trim()||"m²"});salvar(o);render();};
   const U=p.un||"m²";
-  box.append(el("div",{class:"g6",style:"margin-top:6px"},
-    campo("Quantidade "+qual+" ("+U+")",ni("qtd","ex.: 210")),campo("Unidade",un),
-    campo("Rendimento por dia ("+U+"/dia"+(s.tipo==="unit"?", por equipe":"")+")",ni("rend","ex.: 35"))));
+  box.append(el("div",{class:"g6",style:"margin-top:8px"},
+    campo("Quantidade "+qual,ni("qtd","ex.: 210")),campo("Unidade",un),
+    campo("Rendimento ("+U+"/dia)",ni("rend","ex.: 35"))));
   const d=durProd(p);
-  box.append(el("div",{style:"margin-top:6px"},d?`${p.qtd} ${U} ÷ ${p.rend} ${U}/dia = ${r2(p.qtd/p.rend)} → `:"Preencha quantidade e rendimento; a duração é calculada e arredondada para meio dia.",
+  box.append(el("div",{class:"hint",style:"margin-top:6px"},(s.tipo==="unit"?"Rendimento de uma equipe. ":"")+(d?`${p.qtd} ${U} ÷ ${p.rend} ${U}/dia = ${r2(p.qtd/p.rend)} → `:"Preencha quantidade e rendimento; a duração é calculada e arredondada para meio dia."),
     d?el("b",null,d+" dia(s)"):"",ativo?el("button",{class:"sm",style:"margin-left:8px;min-height:28px;padding:2px 8px",onclick:()=>{delete s.prod;salvar(o);render();}},"Remover cálculo"):""));
   return box;}
 let ganttZoom=(()=>{try{const v=localStorage.getItem("obras-zoom");return v==="fit"?"fit":(+v||1);}catch(e){return 1;}})();
