@@ -249,7 +249,9 @@ function calcular(o){
       for(let i=0;i<N;i++)un.push({ini:i0,fim:f0,eq:0,espera:0});
     }else if(gl){
       let ini=Math.max(S0,libIdx,pred?pFimG+lag:S0);if(pend&&!exS.g)ini=Math.max(ini,HOJE);
-      per=exS.g?[{ini,fim:ini+d}]:aplicarPausas(ini,d,pausas);
+      if(exS.g){const rf=cal.idx(addDia(exS.g));if(rf<ini+0.5)ini=Math.max(0,rf-Math.max(d,1));
+        per=aplicarPausas(ini,d,pausas.filter(p=>p.a<rf)).filter(p=>p.ini<rf);if(!per.length)per=[{ini,fim:rf}];else per[per.length-1].fim=rf;}
+      else per=aplicarPausas(ini,d,pausas);
       if(!exS.g&&pvS.g){const pf=cal.idx(pvS.g)+1,l=per[per.length-1];if(pf>l.fim)l.fim=pf;}
       const i0=per[0].ini,f0=per[per.length-1].fim;
       for(let i=0;i<N;i++)un.push({ini:i0,fim:f0,eq:0,espera:0});
@@ -264,6 +266,7 @@ function calcular(o){
         let fim=ini+d,par=0;
         if(!exS[i])for(const p of pausas){if(p.b<=ini||p.a>=fim)continue;if(p.a<=ini){par+=p.b-ini;ini=p.b;fim=ini+d;}else{par+=p.b-p.a;fim=p.b+(fim-p.a);}}
         if(!exS[i]&&pvS[i]){const pf=cal.idx(pvS[i])+1;if(pf>fim)fim=pf;}
+        if(exS[i]){const rf=cal.idx(addDia(exS[i]));if(rf<ini+0.5)ini=Math.max(0,rf-Math.max(d,1));fim=rf;}
         un.push({ini,fim,eq:t,espera:w,par});free[t]=fim;usada[t]=true;
       }
       if(pred)for(let i=0;i<N;i++)ideal=Math.max(ideal,(pred.gl?pFimG:pFimU(i))+lag-Math.floor(i/k)*d);
@@ -1625,8 +1628,8 @@ function infoBarra(o,c,AND,r,ctx){
     linhaInfo("Etapa",nomeEtapa(o,r.s.etapa)),
     linhaInfo("Tipo",tipo),
     linhaInfo("Início previsto",fdI(cal.iso(cal.data(r.inicio)))),
-    linhaInfo("Término previsto",fdI(cal.iso(cal.fim(r.fim)))),
-    linhaInfo("Duração",diasU(r.tp==="unit"?r.fim-r.inicio:r.diasTrab)+(r.tp==="unit"?" ("+n1(r.d)+" por "+P.toLowerCase()+")":"")),
+    linhaInfo(r.tp==="global"&&ex.g?"Término real":"Término previsto",fdI(cal.iso(cal.fim(r.fim)))),
+    linhaInfo("Duração",diasU(r.tp==="unit"?r.fim-r.inicio:r.diasTrab)+(r.tp==="unit"?" ("+n1(r.d)+" por "+P.toLowerCase()+")":r.tp==="global"&&ex.g&&Math.abs(r.diasTrab-r.d)>0.01?" (previsto: "+diasU(r.d)+")":"")),
     r.pes?linhaInfo("Equipe",(r.tp==="unit"&&r.k>1?r.k+" × "+r.pes:r.pes)+" pessoa"+(r.pes*(r.tp==="unit"?r.k:1)>1?"s":"")):null,
     r.pred?linhaInfo("Depende de",r.pred.s.nome+(r.s.depTipo==="SS"?" (após o início)":"")+(r.s.lag?" + "+r.s.lag+" d":"")):null,
     linhaInfo("Executado",r.tp==="unit"?inf.feitos+" de "+inf.n+" "+P.toLowerCase()+"s":r.tp==="periodos"?inf.feitos+" de "+inf.n+" períodos":(ex.g?"Concluído em "+fdI(ex.g):"Não concluído")),
