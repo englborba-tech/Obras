@@ -948,15 +948,28 @@ function telaRel(a,o){
 const hexRgb=h=>{h=h.replace("#","");return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];};
 function atividadeDias(r){const m=new Map();const add=(a,b,p)=>{for(let x=Math.floor(a+1e-9);x<Math.ceil(b-1e-9);x++)m.set(x,(m.get(x)||0)+p);};
   if(r.tp==="unit")r.un.forEach(u=>add(u.ini,u.fim,r.pes||0));else r.per.forEach(p=>add(p.ini,p.fim,r.pes||0));return m;}
+// setas de dependência nos quadros dia a dia (PDF). lista: [{r,y,h,ks:[colunas trabalhadas]}]
+function setasDias(D,lista,a,b,x0,cw){const pos=new Map(lista.map(x=>[x.r.s.id,x]));
+  lista.forEach(x=>{const r=x.r;if(!r.pred||r.s.semSeta)return;const p=pos.get(r.pred.s.id);if(!p||!p.ks.length||!x.ks.length)return;
+    const kc=Math.min(...x.ks);if(kc<a||kc>=b)return;
+    const kp=r.s.depTipo==="SS"?Math.min(...p.ks):Math.max(...p.ks)+1;
+    const xp=x0+(Math.max(a,Math.min(b,kp))-a)*cw,xc=x0+(kc-a)*cw,yp=p.y+p.h/2,yc=x.y+x.h/2;if(Math.abs(yp-yc)<1e-6)return;
+    const xm=xc>=xp+2?xp+1:xc-1.2;
+    D.setDrawColor(75,85,99);D.setLineWidth(0.3);D.line(xp,yp,xm,yp);D.line(xm,yp,xm,yc);D.line(xm,yc,xc,yc);
+    D.setFillColor(75,85,99);D.triangle(xc,yc,xc-1.3,yc-0.85,xc-1.3,yc+0.85,"F");});}
+// paralisações que tocam o período [de,ate], com o motivo
+function paralisacoesPeriodo(c,de,ate){const l=[];c.ordem.forEach(r=>(r.s.trav||[]).forEach(p=>{if(!p.de)return;const f=p.ate?addDiaN(p.ate,-1):hojeISO();if(p.de<=ate&&f>=de)l.push({r,p});}));
+  return l.sort((x,y)=>x.p.de.localeCompare(y.p.de)).map(({r,p})=>r.s.nome+": "+(p.ate?"parado de "+fdI(p.de)+" a "+fdI(addDiaN(p.ate,-1)):"parado desde "+fdI(p.de)+" (ainda parado)")+" — motivo: "+(p.motivo||"não informado")+(p.pct!=null&&p.pct!==""?" ("+p.pct+"% executado ao parar)":""));}
 function pdfCampo(o,de,ate,fmt,umaFolha){
   const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:"mm",format:fmt||"a4",orientation:"landscape"});
   const K={a4:1,a3:1.25,a2:1.6,a1:2.1,a0:2.8}[fmt||"a4"]||1;
   const P={setFillColor:(...x)=>doc.setFillColor(...x),setDrawColor:(...x)=>doc.setDrawColor(...x),setTextColor:(...x)=>doc.setTextColor(...x),setFont:(...x)=>doc.setFont(...x),
     rect:(x,y,w,h,st)=>doc.rect(x*K,y*K,w*K,h*K,st),line:(a1,b1,c1,d1)=>doc.line(a1*K,b1*K,c1*K,d1*K),text:(t,x,y,op)=>doc.text(t,x*K,y*K,op),
-    setFontSize:v=>doc.setFontSize(v*K),setLineWidth:v=>doc.setLineWidth(v*K),getTextWidth:t=>doc.getTextWidth(t)/K,addPage:()=>doc.addPage(fmt||"a4","landscape"),getNumberOfPages:()=>doc.getNumberOfPages()};
+    setFontSize:v=>doc.setFontSize(v*K),setLineWidth:v=>doc.setLineWidth(v*K),getTextWidth:t=>doc.getTextWidth(t)/K,triangle:(a1,b1,c1,d1,e1,f1,st)=>doc.triangle(a1*K,b1*K,c1*K,d1*K,e1*K,f1*K,st),addPage:()=>doc.addPage(fmt||"a4","landscape"),getNumberOfPages:()=>doc.getNumberOfPages()};
   const c=calcular(o),cal=c.cal,E=eixo(cal),W=doc.internal.pageSize.getWidth()/K,H=doc.internal.pageSize.getHeight()/K,M=8;
   const k0=E.k(new Date(de+"T12:00")),k1=E.k(new Date(ate+"T12:00"))+1;if(k1<=k0)throw new Error("período");
-  const LW=62,HEAD=30,FOOT=20,MINC=6.2;let RH=6.4;
+  const PARL=paralisacoesPeriodo(c,de,ate);
+  const LW=62,HEAD=30,FOOT=20+(PARL.length?5+PARL.length*4.2:0),MINC=6.2;let RH=6.4;
   const porPag=umaFolha?(k1-k0):Math.max(7,Math.floor((W-2*M-LW)/MINC));
   const hojeK=E.k(new Date());
   // dias corridos de cada subetapa (k -> pessoas) e dias parados
@@ -1002,8 +1015,8 @@ function pdfCampo(o,de,ate,fmt,umaFolha){
         else if(dt.getDay()===1)txt(String(dt.getDate()).padStart(2,"0"),x+0.2,yTop+7.8,{b:1,s:5});}
       txt("SERVIÇO",M+1,y0-0.8,{b:1,s:7.5,c:[107,114,128]});
       P.setDrawColor(156,163,175);P.setLineWidth(0.3);P.line(M,y0,x0+nd*CW,y0);
-      let y=y0;
-      LC.slice(r0,r0+rowsPorPag).forEach(l=>{
+      let y=y0;const SET=[];
+      LC.slice(r0,r0+rowsPorPag).forEach(l=>{if(!l.et)SET.push({r:l.r,y,h:RHf,ks:[...l.dias.keys()]});
         if(l.et){P.setFillColor(209,213,219);P.rect(M,y,LW,RHf,"F");let en=l.et.nome.toUpperCase();P.setFont("helvetica","bold");P.setFontSize(7.5*fz);while(P.getTextWidth(en)>LW-3&&en.length>4)en=en.slice(0,-2);if(en!==l.et.nome.toUpperCase())en=en.slice(0,-1)+"…";txt(en,M+1.5,y+RHf*0.68,{b:1,s:7.5*fz});
           P.setDrawColor(156,163,175);P.setLineWidth(0.25);P.line(M,y+RHf,x0+nd*CW,y+RHf);y+=RHf;return;}
         const r=l.r,cor=hexRgb(r.cor),lum=cor[0]*0.3+cor[1]*0.59+cor[2]*0.11;
@@ -1021,8 +1034,11 @@ function pdfCampo(o,de,ate,fmt,umaFolha){
       if(r0+rowsPorPag>=LC.length){P.setFillColor(17,24,39);P.rect(M,y,LW,RHf,"F");txt("EFETIVO TOTAL (pessoas)",M+1.5,y+RHf*0.68,{b:1,s:7.5*fz,c:[255,255,255]});
         for(let k=a;k<b;k++){const x=x0+(k-a)*CW,v=efeK.get(k)||0;P.setDrawColor(209,213,219);P.setLineWidth(0.12);P.rect(x,y,CW,RHf);if(v&&CW>=4.2)txt(v,x+CW/2,y+RHf*0.7,{b:1,s:(CW>=5.5?7:5.5)*Math.min(fz,CW/5.2),al:"center"});}y+=RHf;}
       for(let k=a;k<b;k++){if(E.date(k).getDay()===1&&E.date(k).getDate()!==1){const x=x0+(k-a)*CW;P.setDrawColor(75,85,99);P.setLineWidth(0.4);P.line(x,yTop,x,y);}}
+      setasDias(P,SET,a,b,x0,CW);
       let lx=M,ly=H-FOOT+5;txt("Número no bloco = dia do mês trabalhado.  X vermelho = dia parado.  “10 p.” ao lado do serviço = pessoas na equipe.  Colunas: cinza = fim de semana, rosa = feriado, amarela = hoje.  Última linha = pessoas previstas no dia.",M,ly,{s:7,c:[107,114,128]});ly+=5;
       leg.forEach(v=>{const w=P.getTextWidth(v.nome)+8;if(lx+w>W-M){lx=M;ly+=4.5;}P.setFillColor(...hexRgb(v.cor));P.rect(lx,ly-2.6,3,3,"F");txt(v.nome,lx+4,ly,{s:7});lx+=w+2;});
+      if(PARL.length){ly+=5.5;txt("SERVIÇOS PARADOS NO PERÍODO",M,ly,{b:1,s:7.5,c:[185,28,28]});
+        PARL.forEach(t=>{ly+=4.2;P.setFont("helvetica","normal");P.setFontSize(7);let tt="X  "+t;while(P.getTextWidth(tt)>W-2*M&&tt.length>10)tt=tt.slice(0,-2);if(tt!=="X  "+t)tt=tt.slice(0,-1)+"…";txt(tt,M,ly,{s:7,c:[17,24,39]});});}
       txt("Pág. "+P.getNumberOfPages(),W-M,H-4,{s:7,c:[107,114,128],al:"right"});
     }}
   return doc.output("blob");
@@ -1162,15 +1178,19 @@ function pdfRelatorio(o,R,num,obs){
        if(dt.getDate()===1||k===ka){txt(dt.toLocaleDateString("pt-BR",{month:"long"})+"/"+dt.getFullYear(),x+0.6,yT-1.2,{b:1,s:7.5,c:azul});doc.setDrawColor(29,78,216);doc.setLineWidth(0.4);doc.line(x,yT-4.5,x,yB);}
        const cor=(t==="fer"||t==="par")?[185,28,28]:t?cinzaC:esc;
        txt(SEM[dt.getDay()],x+cw/2,yT+3.6,{s:6.5,c:cor,al:"center"});txt(String(dt.getDate()).padStart(2,"0"),x+cw/2,yT+8,{b:1,s:7.5,c:cor,al:"center"});}
-     y=yT+hd;
-     rows.forEach(({r,m,par})=>{const cor=hexRgb(r.cor),lum=cor[0]*0.3+cor[1]*0.59+cor[2]*0.11;
+     y=yT+hd;const SET=[];
+     rows.forEach(({r,m,par})=>{SET.push({r,y,h:rh,ks:[...m.keys()]});const cor=hexRgb(r.cor),lum=cor[0]*0.3+cor[1]*0.59+cor[2]*0.11;
        let nm=r.s.nome;doc.setFont("helvetica","normal");doc.setFontSize(7.5);while(doc.getTextWidth(nm)>LW-6&&nm.length>4)nm=nm.slice(0,-2);if(nm!==r.s.nome)nm=nm.slice(0,-1)+"…";
        doc.setFillColor(...cor);doc.rect(M,y+rh/2-1.4,2.8,2.8,"F");txt(nm,M+4,y+rh*0.68,{s:7.5});
        for(let k=ka;k<kb;k++){const x=x0+(k-ka)*cw;doc.setDrawColor(209,213,219);doc.setLineWidth(0.12);doc.rect(x,y,cw,rh);
          if(m.has(k)){doc.setFillColor(...cor);doc.rect(x+0.3,y+0.5,cw-0.6,rh-1,"F");txt(String(E.date(k).getDate()).padStart(2,"0"),x+cw/2,y+rh*0.7,{b:1,s:6.5,c:lum>150?esc:[255,255,255],al:"center"});}
          else if(par.has(k)){doc.setDrawColor(220,38,38);doc.setLineWidth(0.4);const p=1.6;doc.line(x+cw/2-p,y+rh/2-p,x+cw/2+p,y+rh/2+p);doc.line(x+cw/2+p,y+rh/2-p,x+cw/2-p,y+rh/2+p);}}
        y+=rh;});
-     y+=4;txt("Número no bloco = dia trabalhado  |  X vermelho = dia parado  |  colunas cinza = fim de semana, rosa = feriado",M,y,{s:7.5,c:cinzaC});y+=3;}}
+     setasDias(doc,SET,ka,kb,x0,cw);
+     y+=4;txt("Número no bloco = dia trabalhado  |  X vermelho = dia parado  |  seta = dependência entre serviços  |  colunas cinza = fim de semana, rosa = feriado",M,y,{s:7.5,c:cinzaC});y+=3;
+     const PARL=paralisacoesPeriodo(R.c,R.de,isoD(E.date(kb-1)));
+     if(PARL.length){novaPag(8);y+=3;txt("Serviços parados:",M,y,{b:1,s:8.5,c:[185,28,28]});y+=1;
+       PARL.forEach(t=>doc.setFont("helvetica","normal").setFontSize(8.5).splitTextToSize("• "+t,CW).forEach(l=>{novaPag(5);y+=4.2;txt(l,M,y,{s:8.5});}));y+=2;}}}
   // 8. fechamento de etapa (opcional)
   let nObs=8;
   if(OPC.fech&&OPC.fech.length){const F=dadosFechamento(o,OPC.fech);nObs=9;
@@ -1489,6 +1509,7 @@ function telaServ(a,o){
       const cu=el("input",{inputmode:"decimal",value:s.custo?String(s.custo).replace(".",","):"",placeholder:"0,00"});cu.onchange=()=>{s.custo=num(cu.value);salvar(o);};
       card.append(el("div",{class:"g6",style:"margin-bottom:10px"},campo("Etapa",es),campo("Tipo",tps),campo("Depende de",dep),
         s.dep?campo("Começa…",(()=>{const x=el("select",null,el("option",{value:"FS"},"Após o término dele"),el("option",{value:"SS"},"Após o início dele"));x.value=s.depTipo||"FS";x.onchange=()=>{s.depTipo=x.value;salvar(o);render();};return x;})()):null,
+        s.dep?campo("Seta no gráfico",(()=>{const x=el("select",null,el("option",{value:"1"},"Mostrar seta"),el("option",{value:"0"},"Ocultar seta"));x.value=s.semSeta?"0":"1";x.onchange=()=>{if(x.value==="0")s.semSeta=true;else delete s.semSeta;salvar(o);render();};return x;})()):null,
         campo(tp==="unit"?"Pessoas por equipe":"Pessoas",numInp("pessoas","1",0))));
       if(tp==="periodos"){
         const box=el("div",{style:"display:grid;gap:8px;margin-bottom:10px"});
@@ -1784,7 +1805,7 @@ function grafico(c,o){
       g.onclick=()=>{if(pa)infoPausa(o,r,pa);else liberar(o,r.s);};}
     if(r.primeiraEspera!==null){const u=r.un[r.primeiraEspera],cx=XS(u.ini-u.espera);
       const d=mk(G,"circle",{cx,cy:y+RH/2,r:5,fill:"#dc2626",stroke:"#fff","stroke-width":"1.5"});tip(d,`Alcança ${r.pred.s.nome} no ${P} ${r.primeiraEspera+1}`);}
-    if(r.pred&&pos[r.pred.s.id]!=null){const yp=pos[r.pred.s.id]+RH/2,yc=y+RH/2;
+    if(r.pred&&!r.s.semSeta&&pos[r.pred.s.id]!=null){const yp=pos[r.pred.s.id]+RH/2,yc=y+RH/2;
       const ss=r.s.depTipo==="SS",xp=ss?XS(r.pred.inicio):(r.predUn&&r.tp==="unit"?XE(r.pred.un[0].fim):XE(r.pred.fim)),xc=XS(r.inicio);
       mk(G,"path",{d:`M${xp} ${yp} L${xp+4} ${yp} L${xp+4} ${yc} L${xc} ${yc}`,fill:"none",stroke:mut,"stroke-width":"1","stroke-opacity":"0.7"});
       mk(G,"path",{d:`M${xc} ${yc} l-5 -3 v6 z`,fill:mut,"fill-opacity":"0.8"});}
