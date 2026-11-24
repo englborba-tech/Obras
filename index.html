@@ -782,7 +782,9 @@ function telaExec(a,o){
       const desc=r.tp==="unit"?inf.feitos+" de "+inf.n+" "+P.toLowerCase()+"s":r.tp==="periodos"?inf.feitos+" de "+inf.n+" períodos":"Obra toda";
       const tl=tagLib(o,r,hi);
       const pa=pausaAberta(r.s);if(pa)card.append(el("div",{class:"alert",style:"margin:0 0 8px;border-color:var(--no)"},"🔒 Travada desde "+fdI(pa.de)+(pa.motivo?": "+pa.motivo:"")+(pa.pct!=null?" · "+pa.pct+"% executado":"")));
-      const hist=(r.s.trav||[]).filter(p=>p.ate);if(hist.length)card.append(el("div",{class:"hint",style:"margin:0 0 6px"},"Paralisações: "+hist.map(p=>fdI(p.de)+"–"+fdI(p.ate)+(p.motivo?" ("+p.motivo+")":"")).join("; ")));
+      const hist=(r.s.trav||[]).filter(p=>p.de);if(hist.length){const hb=el("div",{class:"hint",style:"margin:0 0 6px"},"Paralisações (toque para editar): ");
+        hist.forEach((p,i)=>{if(i)hb.append("; ");hb.append(el("a",{href:"#",style:"color:inherit;text-decoration:underline",onclick:e=>{e.preventDefault();e.stopPropagation();editarPausa(o,r,p);}},fdI(p.de)+"–"+(p.ate?fdI(p.ate):"em aberto")+(p.motivo?" ("+p.motivo+")":"")));});
+        card.append(hb);}
       card.append(el("div",{class:"exh",onclick:()=>{abertoEx=abertoEx===r.s.id?null:r.s.id;render();}},
         el("div",{style:"flex:1;min-width:0"},el("b",null,r.s.nome),el("br"),el("small",null,desc+" · previsto "+fd(cal.data(r.inicio))+" a "+fd(cal.fim(r.fim))),tl?el("div",{style:"margin-top:4px"},tl):null),st),
         (()=>{const p=el("div",{class:"prog",style:"margin-top:8px;height:6px"});p.append(el("i",{style:"width:"+pct*100+"%"}));return p;})());
@@ -1603,7 +1605,23 @@ function infoPausa(o,r,p){const cal=r.cal,ab=!p.ate;
     el("div",null,el("b",null,ab?"Situação: ":"Retomada em: "),ab?"ainda parada":fdI(p.ate)),
     el("div",null,el("b",null,"Dias úteis parados: "),String(dias)),
     p.pct!=null&&p.pct!==""?el("div",null,el("b",null,"Executado ao parar: "),p.pct+"%"):null);
-  modal((ab?"🔒 ":"⏸ ")+r.s.nome,corpo,ab?[["🔓 Retomar atividade","pri",()=>{setTimeout(()=>destravar(o,r),0);}],["Fechar"]]:[["Fechar"]]);}
+  const ed=["✏️ Editar","",()=>{setTimeout(()=>editarPausa(o,r,p),0);}];
+  modal((ab?"🔒 ":"⏸ ")+r.s.nome,corpo,ab?[["🔓 Retomar atividade","pri",()=>{setTimeout(()=>destravar(o,r),0);}],ed,["Fechar"]]:[ed,["Fechar"]]);}
+function editarPausa(o,r,p){const s=r.s;
+  const de=el("input",{type:"date",value:p.de||""}),ate=el("input",{type:"date",value:p.ate||""}),mt=el("input",{value:p.motivo||"",placeholder:"Ex.: falta de material, chuva…"});
+  const box=el("div",{style:"display:grid;gap:10px"},el("p",{class:"hint",style:"margin:0"},"Corrija o período em que o serviço ficou parado. Deixe a retomada em branco se ele ainda está parado."),
+    campo("Parada desde",de),campo("Retomada em (em branco = ainda parado)",ate),campo("Motivo",mt));
+  let pc=null;if(r.tp==="global"){pc=el("input",{type:"number",min:"0",max:"100",inputmode:"numeric",value:p.pct!=null?String(p.pct):""});box.append(campo("Executado ao parar (%) — em branco = não informado",pc));}
+  modal("Editar paralisação · "+s.nome,box,[
+    ["Salvar","pri",()=>{if(!de.value){toast("Informe a data de início da parada");return false;}
+      if(ate.value&&ate.value<de.value){toast("A retomada não pode ser antes da parada");return false;}
+      if(!ate.value&&(s.trav||[]).some(x=>x!==p&&!x.ate)){toast("Já existe outra paralisação em aberto neste serviço");return false;}
+      p.de=de.value;p.ate=ate.value||null;p.motivo=mt.value.trim();
+      if(pc){if(pc.value==="")delete p.pct;else p.pct=Math.max(0,Math.min(100,+pc.value||0));}
+      salvar(o);render();toast("Paralisação atualizada");}],
+    ["🗑 Excluir","dan",()=>{setTimeout(()=>modal("Excluir paralisação?",el("p",{style:"margin:0"},"O período de "+fdI(p.de)+(p.ate?" a "+fdI(p.ate):" até hoje")+" deixa de contar e o cronograma é recalculado como se o serviço não tivesse parado."),
+      [["Excluir","dan",()=>{s.trav=(s.trav||[]).filter(x=>x!==p);salvar(o);render();toast("Paralisação excluída");}],["Cancelar"]]),0);}],
+    ["Cancelar"]]);}
 // ---------- Informações ao tocar nas barras do Gantt ----------
 const diasU=v=>n1(v)+(Math.abs(v-1)<1e-9?" dia útil":" dias úteis");
 function linhaInfo(rot,val,cor){return el("div",{style:"display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--bd)"},
