@@ -1105,21 +1105,7 @@ function pdfRelatorio(o,R,num,obs){
   txt("Previsto "+n1(R.plan*100)+"%",Math.min(W-M,Math.max(M,xp)),y-2.4,{b:1,s:7.5,al:xp>W-M-25?"right":"center"});
   if(R.fis>0.08)txt(n1(R.fis*100)+"%",M+CW*Math.min(1,R.fis)-1.5,y+3.7,{b:1,s:7.5,c:[255,255,255],al:"right"});else txt(n1(R.fis*100)+"%",M+CW*R.fis+1.5,y+3.7,{b:1,s:7.5,c:[21,128,61]});
   y+=10;txt("Barra verde: executado acumulado  |  traço preto: previsto até "+fdI(R.ate),M,y,{s:7.5,c:cinza});y+=2;
-  if((o.gastos||[]).length){const RC=resumoCustos(o,R.c);
-    doc.autoTable({startY:y+2,head:[["Custos por etapa","Orçado","Gasto","Pago","A pagar"]],
-      body:[...RC.porEt.filter(x=>x.orc||x.valor).map(x=>[x.et.nome,x.orc?brl(x.orc):"-",x.valor?brl(x.valor):"-",x.pago?brl(x.pago):"-",x.valor-x.pago>0?brl(x.valor-x.pago):"-"]),
-        ["TOTAL",brl(RC.orc),brl(RC.valor),brl(RC.pago),brl(RC.valor-RC.pago)]],
-      margin:{left:M,right:M},styles:{fontSize:8.5},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}},
-      didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY;}
   const OPC=R.opc||{pag:false,fech:[]};
-  if(OPC.pag){const pend=(o.gastos||[]).filter(g=>(+g.valor||0)-(+g.pago||0)>0.004).sort((x,z)=>(x.venc||"9").localeCompare(z.venc||"9"));
-    if(pend.length){novaPag(20);doc.autoTable({startY:y+3,head:[["Pagamentos a realizar","Subetapa","Vencimento","Favorecido / Pix","Valor"]],
-      body:[...pend.map(g=>{const sv=o.servicos.find(x=>x.id===g.sid);return[g.desc+((+g.pago||0)>0?" (saldo)":""),sv?sv.nome:"-",g.venc?fdI(g.venc):"-",[g.fav,g.pix?tipoPix(g.pix)+": "+fmtPix(g.pix):""].filter(Boolean).join("\n")||"-",brl(r2(g.valor-g.pago))];}),
-        ["TOTAL","","","",brl(r2(pend.reduce((a,g)=>a+(g.valor-g.pago),0)))]],
-      margin:{left:M,right:M},styles:{fontSize:8.5},headStyles:{fillColor:[254,243,199],textColor:esc},columnStyles:{4:{halign:"right",fontStyle:"bold"}},
-      didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY;}}
-  if(R.custo>0&&!(o.gastos||[]).length){doc.autoTable({startY:y+2,head:[["Físico-financeiro","Valor"]],body:[["Custo total planejado",brl(R.custo)],["Previsto até "+fdI(R.ate),brl(R.custoPrev)],["Executado até "+fdI(R.ate),brl(R.custoExec)]],
-    margin:{left:M,right:M},styles:{fontSize:9},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:{1:{halign:"right"}}});y=doc.lastAutoTable.finalY;}
   // tabelas
   const tab=(tit,lst,vazio,cols,row)=>{titulo(tit);if(!lst.length){txt(vazio,M,y+3,{s:9.5,c:cinza});y+=7;return;}
     doc.autoTable({startY:y,head:[cols],body:lst.map(row),margin:{left:M,right:M},styles:{fontSize:9,cellPadding:1.6,valign:"middle"},headStyles:{fillColor:[229,231,235],textColor:esc},
@@ -1191,10 +1177,29 @@ function pdfRelatorio(o,R,num,obs){
      const PARL=paralisacoesPeriodo(R.c,R.de,isoD(E.date(kb-1)));
      if(PARL.length){novaPag(8);y+=3;txt("Serviços parados:",M,y,{b:1,s:8.5,c:[185,28,28]});y+=1;
        PARL.forEach(t=>doc.setFont("helvetica","normal").setFontSize(8.5).splitTextToSize("• "+t,CW).forEach(l=>{novaPag(5);y+=4.2;txt(l,M,y,{s:8.5});}));y+=2;}}}
-  // 8. fechamento de etapa (opcional)
-  let nObs=8;
-  if(OPC.fech&&OPC.fech.length){const F=dadosFechamento(o,OPC.fech);nObs=9;
-    doc.addPage();y=M;titulo("8. FECHAMENTO DE ETAPA");
+  // 8. informações financeiras — sempre no fim, em página própria
+  let nSec=8;
+  const temFin=(o.gastos||[]).length||(OPC.pag&&(o.gastos||[]).some(g=>(+g.valor||0)-(+g.pago||0)>0.004))||R.custo>0;
+  if(temFin){doc.addPage();y=M;titulo(nSec+". INFORMAÇÕES FINANCEIRAS");nSec++;y-=2;
+  if((o.gastos||[]).length){const RC=resumoCustos(o,R.c);
+    doc.autoTable({startY:y+2,head:[["Custos por etapa","Orçado","Gasto","Pago","A pagar"]],
+      body:[...RC.porEt.filter(x=>x.orc||x.valor).map(x=>[x.et.nome,x.orc?brl(x.orc):"-",x.valor?brl(x.valor):"-",x.pago?brl(x.pago):"-",x.valor-x.pago>0?brl(x.valor-x.pago):"-"]),
+        ["TOTAL",brl(RC.orc),brl(RC.valor),brl(RC.pago),brl(RC.valor-RC.pago)]],
+      margin:{left:M,right:M},styles:{fontSize:8.5},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}},
+      didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY;}
+  if(OPC.pag){const pend=(o.gastos||[]).filter(g=>(+g.valor||0)-(+g.pago||0)>0.004).sort((x,z)=>(x.venc||"9").localeCompare(z.venc||"9"));
+    if(pend.length){novaPag(20);doc.autoTable({startY:y+3,head:[["Pagamentos a realizar","Subetapa","Vencimento","Favorecido / Pix","Valor"]],
+      body:[...pend.map(g=>{const sv=o.servicos.find(x=>x.id===g.sid);return[g.desc+((+g.pago||0)>0?" (saldo)":""),sv?sv.nome:"-",g.venc?fdI(g.venc):"-",[g.fav,g.pix?tipoPix(g.pix)+": "+fmtPix(g.pix):""].filter(Boolean).join("\n")||"-",brl(r2(g.valor-g.pago))];}),
+        ["TOTAL","","","",brl(r2(pend.reduce((a,g)=>a+(g.valor-g.pago),0)))]],
+      margin:{left:M,right:M},styles:{fontSize:8.5},headStyles:{fillColor:[254,243,199],textColor:esc},columnStyles:{4:{halign:"right",fontStyle:"bold"}},
+      didParseCell:d=>{if(d.section==="body"&&d.row.index===d.table.body.length-1)d.cell.styles.fontStyle="bold";}});y=doc.lastAutoTable.finalY;}}
+  if(R.custo>0&&!(o.gastos||[]).length){doc.autoTable({startY:y+2,head:[["Físico-financeiro","Valor"]],body:[["Custo total planejado",brl(R.custo)],["Previsto até "+fdI(R.ate),brl(R.custoPrev)],["Executado até "+fdI(R.ate),brl(R.custoExec)]],
+    margin:{left:M,right:M},styles:{fontSize:9},headStyles:{fillColor:[229,231,235],textColor:esc},columnStyles:{1:{halign:"right"}}});y=doc.lastAutoTable.finalY;}
+    y+=2;}
+  // fechamento de etapa (opcional)
+  let nObs=nSec;
+  if(OPC.fech&&OPC.fech.length){const F=dadosFechamento(o,OPC.fech);nObs=nSec+1;
+    if(temFin)novaPag(60);else{doc.addPage();y=M;}titulo(nSec+". FECHAMENTO DE ETAPA");
     doc.autoTable({startY:y,head:[["Subetapa","Orçado","Realizado","Diferença","Pago","Saldo"]],
       body:[...F.itens.map(x=>{const d=r2(x.real-x.orc);return[x.s.nome+"\n"+x.et,x.orc?brl(x.orc):"-",brl(x.real),x.orc&&x.real?(d>0?"+":"")+brl(d):"-",brl(x.pago),x.saldo>0.004?brl(x.saldo):"quitado"];}),
         ["TOTAL",brl(r2(F.itens.reduce((a,x)=>a+x.orc,0))),brl(r2(F.itens.reduce((a,x)=>a+x.real,0))),"",brl(r2(F.itens.reduce((a,x)=>a+x.pago,0))),brl(r2(F.itens.reduce((a,x)=>a+Math.max(0,x.saldo),0)))]],
