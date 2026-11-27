@@ -1299,23 +1299,41 @@ function dadosFechamento(o,sids){const c=calcular(o),out=[],aPagar=[];
     out.push({r,s:r.s,et:nomeEtapa(o,r.s.etapa),orc:r2(r.custo),real:r2(real),pago:r2(pago),saldo:r2(real-pago),gs,pags,motivo:(r.s.fech&&r.s.fech.motivo)||""});
     gs.filter(g=>(+g.valor||0)-(+g.pago||0)>0.004).forEach(g=>aPagar.push({g,s:r.s,valor:r2(g.valor-g.pago),parcial:(+g.pago||0)>0}));});
   return{itens:out,aPagar,total:r2(aPagar.reduce((a,x)=>a+x.valor,0))};}
+function extensoBRL(v){const U=["","um","dois","três","quatro","cinco","seis","sete","oito","nove","dez","onze","doze","treze","quatorze","quinze","dezesseis","dezessete","dezoito","dezenove"],
+  D=["","","vinte","trinta","quarenta","cinquenta","sessenta","setenta","oitenta","noventa"],C=["","cento","duzentos","trezentos","quatrocentos","quinhentos","seiscentos","setecentos","oitocentos","novecentos"];
+  const ate999=n=>{if(n===100)return"cem";const p=[],c=Math.floor(n/100),r=n%100;if(c)p.push(C[c]);if(r<20){if(r)p.push(U[r]);}else{p.push(D[Math.floor(r/10)]);if(r%10)p.push(U[r%10]);}return p.join(" e ");};
+  const inteiro=n=>{if(!n)return"zero";const g=[[1e9,"bilhão","bilhões"],[1e6,"milhão","milhões"],[1e3,"mil","mil"],[1,"",""]],p=[];let r=n;
+    g.forEach(([b,s,pl])=>{const q=Math.floor(r/b);if(q){p.push({q,t:b===1?ate999(q):b===1e3&&q===1?"mil":ate999(q)+" "+(q===1?s:pl)});r%=b;}});
+    if(p.length<2)return p[0].t;const ult=p.pop();return p.map(x=>x.t).join(" ")+(ult.q<100||ult.q%100===0?" e ":" ")+ult.t;};
+  const cent=Math.round(v*100),rs=Math.floor(cent/100),cs=cent%100,out=[];
+  if(rs)out.push(inteiro(rs)+(rs%1e6===0&&rs>=1e6?" de":"")+(rs===1?" real":" reais"));if(cs)out.push(ate999(cs)+(cs===1?" centavo":" centavos"));
+  return out.join(" e ")||"zero reais";}
 function textoFechamento(o,F){const L=[],nomes=F.itens.map(x=>x.s.nome);
   L.push("Olá! Segue o fechamento "+(nomes.length>1?"das etapas de "+nomes.slice(0,-1).join(", ")+" e "+nomes[nomes.length-1]:"da etapa de "+(nomes[0]||""))+".");
   F.itens.forEach(x=>{L.push("");L.push("*"+x.s.nome.toUpperCase()+"*");
     const dif=r2(x.real-x.orc);
-    if(x.orc>0&&x.real>0&&Math.abs(dif)>=0.5){L.push("O orçamento inicial era de "+brl(x.orc)+", e o total ficou em "+brl(x.real)+".");
-      L.push((dif>0?"Acréscimo de "+brl(dif)+".":"Economia de "+brl(-dif)+".")+(x.motivo?" Motivo: "+x.motivo.trim().replace(/\.?$/,"."):""));}
-    else if(x.real>0)L.push((x.gs.length===1&&x.pags.length?"Valor total do serviço: ":"Total da etapa: ")+brl(x.real));
-    else if(x.orc>0)L.push("Orçado: "+brl(x.orc)+" (nenhum gasto lançado ainda)");
+    if(x.orc>0)L.push("Orçado: "+brl(x.orc));
+    if(x.real>0){
+      if(x.gs.length>1)x.gs.forEach(g=>L.push("• "+(g.desc||g.cat||"Gasto")+": "+brl(+g.valor||0)));
+      L.push("*Total fechado na etapa: "+brl(x.real)+"*");
+      if(x.orc>0&&Math.abs(dif)>=0.5)L.push((dif>0?"Acréscimo de "+brl(dif)+" sobre o orçado.":"Economia de "+brl(-dif)+" sobre o orçado.")+(x.motivo?" Motivo: "+x.motivo.trim().replace(/\.?$/,"."):""));}
+    else L.push("Nenhum gasto lançado ainda.");
     if(x.pags.length){
       L.push("");L.push("Pagamentos já realizados:");x.pags.forEach(p=>L.push("• "+p.desc+": "+brl(p.valor)));
       L.push("Total pago: "+brl(x.pago));if(x.saldo>0.004)L.push("Saldo para quitar: "+brl(x.saldo));else L.push("Etapa quitada.");}
   });
+  const totReal=r2(F.itens.reduce((a,x)=>a+x.real,0));
+  if(F.itens.length>1&&totReal>0){L.push("");L.push("*TOTAL FECHADO: "+brl(totReal)+"*");L.push("("+extensoBRL(totReal)+")");}
   if(F.aPagar.length){L.push("");L.push("*PAGAMENTOS A REALIZAR*");
-    F.aPagar.forEach((x,i)=>{L.push("");L.push((i+1)+". *"+x.g.desc+(x.parcial?" (saldo final)":"")+": "+brl(x.valor)+"*");
-      if(x.g.pix)L.push("Pix ("+tipoPix(x.g.pix)+"): "+fmtPix(x.g.pix));else L.push("Chave Pix: envio em seguida");
-      if(x.g.fav)L.push(x.g.fav);});
-    L.push("");L.push("*Total: "+brl(F.total)+"*");}
+    // mesmo favorecido e mesma chave (ou nenhuma) em todos: um Pix só no fim
+    const um=F.aPagar.every(x=>(x.g.fav||"")===(F.aPagar[0].g.fav||"")&&(x.g.pix||"")===(F.aPagar[0].g.pix||""));
+    if(um)L.push("");
+    F.aPagar.forEach((x,i)=>{const linha=(i+1)+". "+x.g.desc+(x.parcial?" (saldo final)":"")+": "+brl(x.valor);
+      if(um){L.push(linha);return;}L.push("");L.push("*"+linha+"*");
+      if(x.g.fav)L.push(x.g.fav);
+      if(x.g.pix)L.push("Pix ("+tipoPix(x.g.pix)+"): "+fmtPix(x.g.pix));else L.push("Pix: ______________________");});
+    L.push("");L.push("*Total a pagar: "+brl(F.total)+"*");if(F.itens.length<=1||Math.abs(F.total-totReal)>0.004)L.push("("+extensoBRL(F.total)+")");
+    if(um){const g0=F.aPagar[0].g;L.push("");if(g0.fav)L.push("Favorecido: "+g0.fav);L.push(g0.pix?"Pix ("+tipoPix(g0.pix)+"): "+fmtPix(g0.pix):"Pix: ______________________");}}
   else{L.push("");L.push("Não há pagamentos pendentes nestas etapas.");}
   L.push("");L.push("Fico à disposição para qualquer dúvida.");return L.join("\n");}
 function pdfFechamento(o,F){const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:"mm",format:"a4"});
